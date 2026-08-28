@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Mboka AI</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --ink: #1c1914;
+      --muted: #5c564c;
+      --green: #1f6b3a;
+      --green-dark: #164a28;
+      --terracotta: #c45c26;
+      --card: #fffdf8;
+      --line: #e4d9c8;
+      --err: #9b1c1c;
+      --ok: #1f6b3a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 440px; margin: 0 auto; padding: 20px 16px 48px; }
+    header h1 { margin: 0; font-size: 1.7rem; letter-spacing: -0.03em; }
+    header p { margin: 6px 0 0; color: var(--muted); font-size: 0.95rem; }
+
+    .phone-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .phone-bar input {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font: inherit;
+      background: #fff;
+    }
+
+    .recorder {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 28px 16px 22px;
+      margin-top: 16px;
+      text-align: center;
+    }
+    #micBtn {
+      width: 128px; height: 128px; border: 0; border-radius: 50%;
+      background: var(--green); color: #fff; font-size: 3rem; cursor: pointer;
+      box-shadow: 0 10px 24px rgba(31, 107, 58, 0.28);
+    }
+    #micBtn:active { transform: scale(0.97); }
+    #micBtn.recording {
+      background: var(--terracotta);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    #micBtn:disabled { opacity: 0.6; cursor: wait; }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 8px rgba(196, 92, 38, 0.16); }
+      50% { box-shadow: 0 0 0 16px rgba(196, 92, 38, 0.08); }
+    }
+    .mic-hint { margin: 14px 0 0; color: var(--muted); font-size: 0.9rem; }
+
+    .banner { display: none; margin-top: 14px; padding: 10px 12px; border-radius: 10px; font-size: 0.9rem; text-align: left; }
+    .banner.show { display: block; }
+    .banner.error { background: #fde8e8; color: var(--err); }
+    .banner.info { background: #eef6ee; color: var(--ok); }
+
+    #confirmPanel {
+      display: none; background: var(--card); border: 1px solid var(--line);
+      border-radius: 20px; padding: 18px 16px; margin-top: 16px;
+    }
+    #confirmPanel.show { display: block; }
+    #confirmPanel h2 { margin: 0 0 12px; font-size: 1.05rem; }
+    .field { margin-bottom: 10px; text-align: left; }
+    .field label {
+      display: block; font-size: 0.75rem; font-weight: 700;
+      letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
+    }
+    .field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff; }
+    .transcript { font-size: 0.85rem; color: var(--muted); background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+    .row-btns { display: flex; gap: 8px; margin-top: 14px; }
+    .row-btns button {
+      flex: 1; border: 0; border-radius: 12px; padding: 12px;
+      font: inherit; font-weight: 700; cursor: pointer;
+    }
+    #confirmBtn { background: var(--green); color: #fff; }
+    #rerecordBtn { background: var(--line); color: var(--ink); }
+    #playBtn {
+      display: none; width: 100%; margin-top: 8px; border: 1px dashed var(--green);
+      background: transparent; color: var(--green-dark); border-radius: 12px;
+      padding: 10px; font: inherit; font-weight: 700; cursor: pointer;
+    }
+    #playBtn.show { display: block; }
+
+    .feed-head { display: flex; align-items: baseline; justify-content: space-between; margin: 28px 4px 10px; }
+    .feed-head h2 { margin: 0; font-size: 1.15rem; }
+    .feed-tabs { display: flex; gap: 6px; }
+    .feed-tabs button {
+      border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+      padding: 6px 12px; font: inherit; font-size: 0.82rem; cursor: pointer;
+    }
+    .feed-tabs button.active { background: var(--green); border-color: var(--green); color: #fff; }
+    .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .filters button {
+      border: 1px solid var(--line); background: var(--card); color: var(--ink);
+      border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 0.82rem; cursor: pointer;
+    }
+    .filters button.active { background: var(--green); border-color: var(--green); color: #fff; }
+    #locationFilter {
+      width: 100%; margin-bottom: 12px; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff;
+    }
+
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 10px; }
+    .card.sold { opacity: 0.62; }
+    .card img { width: 100%; border-radius: 10px; margin-bottom: 8px; max-height: 180px; object-fit: cover; }
+    .card .item { font-weight: 700; font-size: 1.02rem; margin-bottom: 6px; }
+    .card .meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 0.88rem; }
+    .pill { background: #eef6ee; color: var(--green-dark); border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; text-transform: capitalize; }
+    .contacts { display: flex; gap: 8px; margin-top: 10px; }
+    .contacts a, .contacts button {
+      flex: 1; text-align: center; text-decoration: none; color: var(--green-dark);
+      border: 1px solid var(--line); background: #fff; border-radius: 10px;
+      padding: 8px; font: inherit; font-size: 0.82rem; font-weight: 700; cursor: pointer;
+    }
+    .empty { color: var(--muted); text-align: center; padding: 20px 8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Mboka AI</h1>
+      <p>Sema listing yako — tutasikiliza, tutasoma tena, kisha tuchapishe.</p>
+    </header>
+
+    <div class="phone-bar">
+      <input id="myPhone" type="tel" inputmode="tel" placeholder="Your phone (for Call / WhatsApp)" autocomplete="tel" />
+    </div>
+
+    <section class="recorder">
+      <button id="micBtn" type="button" aria-label="Record listing">🎤</button>
+      <p class="mic-hint" id="micHint">Tap to record · tap again to stop</p>
+      <div id="statusBanner" class="banner" role="status"></div>
+    </section>
+
+    <section id="confirmPanel">
+      <h2>Confirm listing</h2>
+      <div class="transcript" id="rawTranscript"></div>
+      <div class="field"><label for="fieldItem">Item</label><input id="fieldItem" type="text" /></div>
+      <div class="field"><label for="fieldPrice">Price (KSh)</label><input id="fieldPrice" type="text" inputmode="numeric" /></div>
+      <div class="field"><label for="fieldLocation">Location</label><input id="fieldLocation" type="text" /></div>
+      <div class="field">
+        <label for="fieldCategory">Category</label>
+        <select id="fieldCategory">
+          <option value="furniture">furniture</option>
+          <option value="clothing">clothing</option>
+          <option value="food">food</option>
+          <option value="services">services</option>
+          <option value="electronics">electronics</option>
+          <option value="other">other</option>
+        </select>
+      </div>
+      <div class="field"><label for="fieldCondition">Condition</label><input id="fieldCondition" type="text" placeholder="new / used (optional)" /></div>
+      <div class="field"><label for="fieldContact">Contact phone</label><input id="fieldContact" type="tel" inputmode="tel" /></div>
+      <div class="field"><label for="fieldPhoto">Photo (optional, 1)</label><input id="fieldPhoto" type="file" accept="image/*" /></div>
+      <div class="row-btns">
+        <button id="rerecordBtn" type="button">Re-record</button>
+        <button id="confirmBtn" type="button">Confirm</button>
+      </div>
+      <button id="playBtn" type="button">Tap to play confirmation</button>
+    </section>
+
+    <div class="feed-head">
+      <h2>Live feed</h2>
+      <div class="feed-tabs">
+        <button type="button" id="tabAll" class="active">All</button>
+        <button type="button" id="tabMine">Mine</button>
+      </div>
+    </div>
+    <div class="filters" id="filters"></div>
+    <select id="locationFilter" aria-label="Filter by location"></select>
+    <div id="feed"></div>
+  </div>
+
+  <script>
+    /*
+      Extraction lives here on purpose (no LLM key required).
+      To swap in an LLM later: keep this function's return shape and
+      replace the body with a fetch to a new POST /extract endpoint.
+    */
+    const LOCATIONS = [
+      "Kawangware", "Kayole", "Eastleigh", "Kibra", "Ngong Road",
+      "Westlands", "CBD", "Kasarani", "Umoja", "Dagoretti",
+      "Rongai", "Buruburu", "Githurai", "Embakasi", "Langata"
+    ];
+    const CATEGORY_KEYWORDS = {
+      furniture: ["viti", "meza", "mbao", "kabati"],
+      clothing: ["nguo", "shati", "sketi"],
+      food: ["chakula", "mboga", "matunda"],
+      services: ["fundi", "umeme", "bomba", "ukarabati"],
+      electronics: ["simu", "radio", "laptop", "tv"]
+    };
+    const NUMBER_WORDS = {
+      moja: 1, mbili: 2, tatu: 3, nne: 4, tano: 5,
+      sita: 6, saba: 7, nane: 8, tisa: 9, kumi: 10
+    };
+    const FILTERS = ["all", "furniture", "clothing", "food", "services", "electronics", "other"];
+    const PHONE_KEY = "mboka-phone";
+    const SILENCE_MS = 2000;
+    const MIN_RECORD_MS = 800;
+    const RMS_THRESHOLD = 0.018;
+
+    const micBtn = document.getElementById("micBtn");
+    const micHint = document.getElementById("micHint");
+    const statusBanner = document.getElementById("statusBanner");
+    const confirmPanel = document.getElementById("confirmPanel");
+    const rawTranscriptEl = document.getElementById("rawTranscript");
+    const fieldItem = document.getElementById("fieldItem");
+    const fieldPrice = document.getElementById("fieldPrice");
+    const fieldLocation = document.getElementById("fieldLocation");
+    const fieldCategory = document.getElementById("fieldCategory");
+    const fieldCondition = document.getElementById("fieldCondition");
+    const fieldContact = document.getElementById("fieldContact");
+    const fieldPhoto = document.getElementById("fieldPhoto");
+    const confirmBtn = document.getElementById("confirmBtn");
+    const rerecordBtn = document.getElementById("rerecordBtn");
+    const playBtn = document.getElementById("playBtn");
+    const feedEl = document.getElementById("feed");
+    const filtersEl = document.getElementById("filters");
+    const locationFilter = document.getElementById("locationFilter");
+    const myPhone = document.getElementById("myPhone");
+    const tabAll = document.getElementById("tabAll");
+    const tabMine = document.getElementById("tabMine");
+
+    let mediaRecorder = null;
+    let mediaStream = null;
+    let chunks = [];
+    let recording = false;
+    let transcribing = false;
+    let startedAt = 0;
+    let silenceTimer = null;
+    let analyser = null;
+    let audioContext = null;
+    let rafId = 0;
+    let allListings = [];
+    let activeFilter = "all";
+    let activeLocation = "all";
+    let showMine = false;
+    let pendingAudioUrl = "";
+
+    myPhone.value = localStorage.getItem(PHONE_KEY) || "";
+    myPhone.addEventListener("change", function () {
+      localStorage.setItem(PHONE_KEY, myPhone.value.trim());
+    });
+
+    function showBanner(message, type) {
+      statusBanner.textContent = message;
+      statusBanner.className = "banner show " + (type || "error");
+    }
+    function hideBanner() {
+      statusBanner.className = "banner";
+      statusBanner.textContent = "";
+    }
+    function samePhone(a, b) {
+      return String(a || "").replace(/\D/g, "") === String(b || "").replace(/\D/g, "") && String(a || "").replace(/\D/g, "").length >= 9;
+    }
+    function telHref(phone) {
+      const digits = String(phone || "").replace(/\D/g, "");
+      return digits ? ("tel:" + phone) : "";
+    }
+    function waHref(phone) {
+      let n = String(phone || "").replace(/\D/g, "");
+      if (!n) return "";
+      if (n.charAt(0) === "0" && n.length === 10) n = "254" + n.slice(1);
+      else if (n.length === 9) n = "254" + n;
+      return "https://wa.me/" + n;
+    }
+
+    function extractPrice(text) {
+      try {
+        const lower = text.toLowerCase();
+        const elfuWord = lower.match(/\belfu\s+(moja|mbili|tatu|nne|tano|sita|saba|nane|tisa|kumi)\b/);
+        if (elfuWord) return String(NUMBER_WORDS[elfuWord[1]] * 1000);
+        const elfuDigit = lower.match(/\belfu\s+(\d+)\b/);
+        if (elfuDigit) return String(Number(elfuDigit[1]) * 1000);
+        const nearCurrency = text.match(/(?:kshs?|kes|bob|shilingi|shillings?)\s*[.:]?\s*(\d{1,3}(?:[,\s]\d{3})+|\d+)/i)
+          || text.match(/(\d{1,3}(?:[,\s]\d{3})+|\d+)\s*(?:kshs?|kes|bob|shilingi|shillings?)/i);
+        if (nearCurrency) return nearCurrency[1].replace(/[,\s]/g, "");
+        const grouped = text.match(/\b\d{1,3}(?:[,\s]\d{3})+\b/);
+        if (grouped) return grouped[0].replace(/[,\s]/g, "");
+        const digits = text.match(/\b\d{2,7}\b/g);
+        if (!digits || !digits.length) return "";
+        return String(Math.max.apply(null, digits.map(Number)));
+      } catch (e) { return ""; }
+    }
+    function extractLocation(text) {
+      try {
+        const lower = text.toLowerCase();
+        for (let i = 0; i < LOCATIONS.length; i++) {
+          if (lower.indexOf(LOCATIONS[i].toLowerCase()) !== -1) return LOCATIONS[i];
+        }
+        return "";
+      } catch (e) { return ""; }
+    }
+    function extractCategory(text) {
+      try {
+        const lower = text.toLowerCase();
+        const names = Object.keys(CATEGORY_KEYWORDS);
+        for (let i = 0; i < names.length; i++) {
+          const words = CATEGORY_KEYWORDS[names[i]];
+          for (let j = 0; j < words.length; j++) {
+            if (lower.indexOf(words[j]) !== -1) return names[i];
+          }
+        }
+        return "other";
+      } catch (e) { return "other"; }
+    }
+    function extractCondition(text) {
+      try {
+        const lower = text.toLowerCase();
+        if (/\b(mpya|brand new|new)\b/.test(lower)) return "new";
+        if (/\b(used|imetumika|old)\b/.test(lower)) return "used";
+        return "";
+      } catch (e) { return ""; }
+    }
+    function extractListing(transcript) {
+      const text = (transcript || "").trim();
+      return {
+        item: text,
+        price: extractPrice(text),
+        location: extractLocation(text),
+        category: extractCategory(text),
+        condition: extractCondition(text)
+      };
+    }
+    function confirmationSummary(fields) {
+      const item = fields.item || "bidhaa";
+      const parts = ["Umeongeza: " + item];
+      if (fields.price) parts.push("KSh " + fields.price);
+      if (fields.location) parts.push(fields.location);
+      return parts.join(", ") + ". Sawa?";
+    }
+
+    function pickMimeType() {
+      const types = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+      if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return "";
+      for (let i = 0; i < types.length; i++) {
+        if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+      }
+      return "";
+    }
+    function blobToBase64(blob) {
+      return new Promise(function (resolve, reject) {
+        const reader = new FileReader();
+        reader.onloadend = function () {
+          const result = String(reader.result || "");
+          const comma = result.indexOf(",");
+          resolve(comma >= 0 ? result.slice(comma + 1) : result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+    function compressPhoto(file) {
+      return new Promise(function (resolve) {
+        if (!file) { resolve(""); return; }
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = function () {
+          const max = 640;
+          let w = img.width, h = img.height;
+          if (w > max || h > max) {
+            const scale = max / Math.max(w, h);
+            w = Math.round(w * scale);
+            h = Math.round(h * scale);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          URL.revokeObjectURL(url);
+          resolve(canvas.toDataURL("image/jpeg", 0.7));
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); resolve(""); };
+        img.src = url;
+      });
+    }
+
+    function rmsFromAnalyser() {
+      if (!analyser) return 0;
+      const data = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      return Math.sqrt(sum / data.length);
+    }
+    function watchSilence() {
+      const rms = rmsFromAnalyser();
+      if (Date.now() - startedAt < MIN_RECORD_MS) {
+        rafId = requestAnimationFrame(watchSilence);
+        return;
+      }
+      if (rms < RMS_THRESHOLD) {
+        if (!silenceTimer) {
+          silenceTimer = setTimeout(function () { if (recording) stopRecording(); }, SILENCE_MS);
+        }
+      } else if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+      }
+      if (recording) rafId = requestAnimationFrame(watchSilence);
+    }
+    function cleanupStream() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = 0;
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = null;
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(function (t) { t.stop(); });
+        mediaStream = null;
+      }
+      if (audioContext) { audioContext.close().catch(function () {}); audioContext = null; }
+      analyser = null;
+      mediaRecorder = null;
+      recording = false;
+    }
+
+    async function startRecording() {
+      hideBanner();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showBanner("This browser cannot record audio. Try Chrome on a phone or laptop.", "error");
+        return;
+      }
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true }
+        });
+      } catch (err) {
+        const denied = err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
+        showBanner(
+          denied
+            ? "Microphone permission denied. Allow the mic in your browser settings, then tap again."
+            : "Could not open the microphone. Check that no other app is using it.",
+          "error"
+        );
+        return;
+      }
+      chunks = [];
+      const mime = pickMimeType();
+      try {
+        mediaRecorder = mime ? new MediaRecorder(mediaStream, { mimeType: mime }) : new MediaRecorder(mediaStream);
+      } catch (err) {
+        cleanupStream();
+        showBanner("Could not start the recorder in this browser.", "error");
+        return;
+      }
+      mediaRecorder.ondataavailable = function (e) {
+        if (e.data && e.data.size) chunks.push(e.data);
+      };
+      mediaRecorder.onstop = function () {
+        const type = (mediaRecorder && mediaRecorder.mimeType) || mime || "audio/webm";
+        const blob = new Blob(chunks, { type: type });
+        cleanupStream();
+        sendForTranscription(blob);
+      };
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+      } catch (e) { analyser = null; }
+      mediaRecorder.start(200);
+      recording = true;
+      startedAt = Date.now();
+      micBtn.classList.add("recording");
+      micHint.textContent = "Listening… tap to stop, or pause ~2s";
+      if (analyser) rafId = requestAnimationFrame(watchSilence);
+    }
+    function stopRecording() {
+      if (!recording || !mediaRecorder) return;
+      recording = false;
+      micBtn.classList.remove("recording");
+      try {
+        if (mediaRecorder.state !== "inactive") mediaRecorder.stop();
+      } catch (e) {
+        cleanupStream();
+        showBanner("Recording stopped unexpectedly. Try again.", "error");
+      }
+    }
+
+    async function sendForTranscription(blob) {
+      transcribing = true;
+      micBtn.disabled = true;
+      micHint.textContent = "Transcribing…";
+      try {
+        if (!blob.size) {
+          showBanner("Recording was empty. Tap the mic and speak, then stop.", "error");
+          return;
+        }
+        const audio = await blobToBase64(blob);
+        const res = await fetch("/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio: audio, mimeType: blob.type || "audio/webm" })
+        });
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) {
+          showBanner(data.error || "Transcription failed. Try again.", "error");
+          return;
+        }
+        const transcript = (data.transcript || "").trim();
+        if (!transcript) {
+          showBanner("Heard nothing we could transcribe. Try speaking a bit louder and retry.", "error");
+          return;
+        }
+        openConfirmPanel(transcript);
+      } catch (err) {
+        showBanner("Transcription failed. Check your connection and retry.", "error");
+      } finally {
+        transcribing = false;
+        micBtn.disabled = false;
+        micHint.textContent = "Tap to record · tap again to stop";
+        micBtn.classList.remove("recording");
+      }
+    }
+
+    function currentFields() {
+      return {
+        item: fieldItem.value.trim(),
+        price: fieldPrice.value.trim(),
+        location: fieldLocation.value.trim(),
+        category: fieldCategory.value || "other",
+        condition: fieldCondition.value.trim(),
+        contact: fieldContact.value.trim() || myPhone.value.trim()
+      };
+    }
+    async function speakSummary(fields) {
+      playBtn.classList.remove("show");
+      if (pendingAudioUrl) { URL.revokeObjectURL(pendingAudioUrl); pendingAudioUrl = ""; }
+      try {
+        const res = await fetch("/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: confirmationSummary(fields) })
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(function () { return {}; });
+          showBanner(data.error || "Could not play confirmation audio. You can still confirm.", "error");
+          return;
+        }
+        const audioBlob = await res.blob();
+        pendingAudioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(pendingAudioUrl);
+        const playAttempt = audio.play();
+        if (playAttempt && playAttempt.catch) {
+          playAttempt.catch(function () { playBtn.classList.add("show"); });
+        }
+      } catch (err) {
+        showBanner("Could not play confirmation audio. You can still confirm.", "error");
+      }
+    }
+    function openConfirmPanel(transcript) {
+      hideBanner();
+      const extracted = extractListing(transcript);
+      rawTranscriptEl.textContent = 'Heard: "' + transcript + '"';
+      fieldItem.value = extracted.item;
+      fieldPrice.value = extracted.price;
+      fieldLocation.value = extracted.location;
+      fieldCategory.value = extracted.category || "other";
+      fieldCondition.value = extracted.condition;
+      fieldContact.value = myPhone.value.trim();
+      fieldPhoto.value = "";
+      confirmPanel.classList.add("show");
+      confirmPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      speakSummary(extracted);
+    }
+    function closeConfirmPanel() {
+      confirmPanel.classList.remove("show");
+      playBtn.classList.remove("show");
+      if (pendingAudioUrl) { URL.revokeObjectURL(pendingAudioUrl); pendingAudioUrl = ""; }
+    }
+
+    async function confirmListing() {
+      const fields = currentFields();
+      if (!fields.item) {
+        showBanner("Add an item description before confirming.", "error");
+        return;
+      }
+      confirmBtn.disabled = true;
+      try {
+        let photo_url = "";
+        if (fieldPhoto.files && fieldPhoto.files[0]) {
+          photo_url = await compressPhoto(fieldPhoto.files[0]);
+        }
+        if (fields.contact) localStorage.setItem(PHONE_KEY, fields.contact);
+        myPhone.value = fields.contact;
+        const res = await fetch("/listings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            item: fields.item,
+            price: fields.price,
+            location: fields.location,
+            category: fields.category,
+            condition: fields.condition,
+            contact: fields.contact,
+            photo_url: photo_url,
+            source_channel: "web"
+          })
+        });
+        if (!res.ok) {
+          showBanner("Could not post the listing. Try Confirm again.", "error");
+          return;
+        }
+        closeConfirmPanel();
+        showBanner("Listing posted.", "info");
+        await loadListings();
+      } catch (err) {
+        showBanner("Could not post the listing. Try Confirm again.", "error");
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    }
+
+    async function markSold(id) {
+      try {
+        const res = await fetch("/listings/" + encodeURIComponent(id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "sold" })
+        });
+        if (!res.ok) {
+          showBanner("Could not mark as sold.", "error");
+          return;
+        }
+        await loadListings();
+      } catch (err) {
+        showBanner("Could not mark as sold.", "error");
+      }
+    }
+
+    function visibleListings() {
+      const phone = myPhone.value.trim();
+      return allListings.filter(function (l) {
+        if (showMine && !samePhone(l.contact, phone)) return false;
+        if (activeFilter !== "all" && l.category !== activeFilter) return false;
+        if (activeLocation !== "all" && l.location !== activeLocation) return false;
+        return true;
+      });
+    }
+    function renderFilters() {
+      filtersEl.innerHTML = "";
+      FILTERS.forEach(function (name) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = name;
+        if (name === activeFilter) btn.className = "active";
+        btn.addEventListener("click", function () {
+          activeFilter = name;
+          renderFilters();
+          renderFeed();
+        });
+        filtersEl.appendChild(btn);
+      });
+    }
+    function renderLocationFilter() {
+      const seen = {};
+      const names = [];
+      allListings.forEach(function (l) {
+        if (l.location && !seen[l.location]) {
+          seen[l.location] = true;
+          names.push(l.location);
+        }
+      });
+      names.sort();
+      const previous = activeLocation;
+      locationFilter.innerHTML = "";
+      const allOpt = document.createElement("option");
+      allOpt.value = "all";
+      allOpt.textContent = "All areas";
+      locationFilter.appendChild(allOpt);
+      names.forEach(function (name) {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        locationFilter.appendChild(opt);
+      });
+      activeLocation = names.indexOf(previous) >= 0 ? previous : "all";
+      locationFilter.value = activeLocation;
+    }
+    function renderFeed() {
+      const rows = visibleListings();
+      feedEl.innerHTML = "";
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = showMine
+          ? "No listings for this phone yet. Record one above."
+          : "No listings in this filter yet.";
+        feedEl.appendChild(empty);
+        return;
+      }
+      const my = myPhone.value.trim();
+      rows.forEach(function (l) {
+        const card = document.createElement("article");
+        card.className = "card" + (l.status === "sold" ? " sold" : "");
+        if (l.photo_url) {
+          const img = document.createElement("img");
+          img.src = l.photo_url;
+          img.alt = "";
+          card.appendChild(img);
+        }
+        const item = document.createElement("div");
+        item.className = "item";
+        item.textContent = l.item || "Untitled";
+        card.appendChild(item);
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const price = document.createElement("span");
+        price.textContent = l.price ? ("KSh " + l.price) : "Price not set";
+        const loc = document.createElement("span");
+        loc.textContent = l.location || "Location not set";
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.textContent = l.category || "other";
+        meta.appendChild(price);
+        meta.appendChild(loc);
+        meta.appendChild(pill);
+        if (l.condition) {
+          const cond = document.createElement("span");
+          cond.textContent = l.condition;
+          meta.appendChild(cond);
+        }
+        if (l.status === "sold") {
+          const sold = document.createElement("span");
+          sold.className = "pill";
+          sold.textContent = "sold";
+          meta.appendChild(sold);
+        }
+        card.appendChild(meta);
+        const contacts = document.createElement("div");
+        contacts.className = "contacts";
+        const call = telHref(l.contact);
+        const wa = waHref(l.contact);
+        if (call) {
+          const a = document.createElement("a");
+          a.href = call;
+          a.textContent = "Call";
+          contacts.appendChild(a);
+        }
+        if (wa) {
+          const a = document.createElement("a");
+          a.href = wa;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.textContent = "WhatsApp";
+          contacts.appendChild(a);
+        }
+        if (samePhone(l.contact, my) && l.status === "active") {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = "Mark sold";
+          btn.addEventListener("click", function () { markSold(l.id); });
+          contacts.appendChild(btn);
+        }
+        if (contacts.childNodes.length) card.appendChild(contacts);
+        feedEl.appendChild(card);
+      });
+    }
+    async function loadListings() {
+      try {
+        const res = await fetch("/listings");
+        allListings = await res.json();
+        renderLocationFilter();
+        renderFeed();
+      } catch (err) {
+        feedEl.innerHTML = '<div class="empty">Could not load the feed.</div>';
+      }
+    }
+
+    micBtn.addEventListener("click", function () {
+      if (transcribing) return;
+      if (recording) stopRecording();
+      else startRecording();
+    });
+    rerecordBtn.addEventListener("click", function () {
+      closeConfirmPanel();
+      startRecording();
+    });
+    confirmBtn.addEventListener("click", confirmListing);
+    playBtn.addEventListener("click", function () {
+      if (!pendingAudioUrl) return;
+      new Audio(pendingAudioUrl).play().catch(function () {});
+    });
+    locationFilter.addEventListener("change", function () {
+      activeLocation = locationFilter.value;
+      renderFeed();
+    });
+    tabAll.addEventListener("click", function () {
+      showMine = false;
+      tabAll.className = "active";
+      tabMine.className = "";
+      renderFeed();
+    });
+    tabMine.addEventListener("click", function () {
+      showMine = true;
+      tabMine.className = "active";
+      tabAll.className = "";
+      if (!myPhone.value.trim()) {
+        showBanner("Enter your phone above, then open Mine.", "error");
+      }
+      renderFeed();
+    });
+    myPhone.addEventListener("input", function () {
+      if (showMine) renderFeed();
+    });
+
+    renderFilters();
+    loadListings();
+  </script>
+</body>
+</html>
