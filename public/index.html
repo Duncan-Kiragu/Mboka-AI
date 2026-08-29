@@ -229,6 +229,7 @@
     const SILENCE_MS = 2000;
     const MIN_RECORD_MS = 800;
     const RMS_THRESHOLD = 0.018;
+    const CALL_GREETING = "Niambie unauza nini?";
 
     const micBtn = document.getElementById("micBtn");
     const micHint = document.getElementById("micHint");
@@ -370,8 +371,38 @@
       recording = false;
     }
 
+    function playGreeting(text) {
+      return fetch("/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text })
+      }).then(function (res) {
+        if (!res.ok) return;
+        return res.blob().then(function (blob) {
+          return new Promise(function (resolve) {
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            audio.onended = function () {
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            audio.onerror = function () {
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            const attempt = audio.play();
+            if (attempt && attempt.catch) attempt.catch(function () { resolve(); });
+          });
+        });
+      }).catch(function () {});
+    }
+
     async function startRecording() {
       hideBanner();
+      micBtn.disabled = true;
+      micHint.textContent = CALL_GREETING;
+      await playGreeting(CALL_GREETING);
+      micBtn.disabled = false;
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         showBanner("This browser cannot record audio. Try Chrome on a phone or laptop.", "error");
         return;
@@ -444,10 +475,14 @@
           return;
         }
         const audio = await blobToBase64(blob);
-        const res = await fetch("/transcribe", {
+        const res = await fetch("/call/record", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ audio: audio, mimeType: blob.type || "audio/webm" })
+          body: JSON.stringify({
+            audio: audio,
+            mimeType: blob.type || "audio/webm",
+            phoneNumber: myPhone.value.trim()
+          })
         });
         const data = await res.json().catch(function () { return {}; });
         if (!res.ok) {
@@ -459,6 +494,7 @@
           showBanner("Heard nothing we could transcribe. Try speaking a bit louder and retry.", "error");
           return;
         }
+        showBanner('Call recorded: "' + transcript + '"', "info");
         await openConfirmPanel(transcript);
       } catch (err) {
         showBanner("Transcription failed. Check your connection and retry.", "error");
