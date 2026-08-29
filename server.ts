@@ -7,6 +7,7 @@
  *   GET  /listings/:id
  *   POST /listings
  *   PATCH /listings/:id     { status: "sold" } or field edits
+ *   POST /extract           { transcript, conversation_id? }
  *   POST /transcribe        { audio, mimeType } → { transcript }
  *   POST /speak             { text } → audio/mpeg
  *
@@ -17,6 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type Request, type Response } from "express";
+import { extractFromTranscript, extractWithRegex } from "./lib/extract.ts";
 import { store } from "./lib/store";
 
 if (existsSync(".env")) {
@@ -70,6 +72,9 @@ app.get("/health", (_req: Request, res: Response) => {
     ok: true,
     listings: store.count(),
     elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY?.trim()),
+    claude: Boolean(
+      (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "").trim()
+    ),
   });
 });
 
@@ -97,6 +102,25 @@ app.patch("/listings/:id", (req: Request, res: Response) => {
     return;
   }
   res.json(row);
+});
+
+app.post("/extract", async (req: Request, res: Response) => {
+  const transcript = typeof req.body?.transcript === "string" ? req.body.transcript : "";
+  const conversationId =
+    typeof req.body?.conversation_id === "string" ? req.body.conversation_id : "";
+  try {
+    const result = await extractFromTranscript(transcript, {
+      conversationId,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("POST /extract", err);
+    res.json({
+      ...extractWithRegex(transcript),
+      conversation_id: conversationId,
+      source: "regex",
+    });
+  }
 });
 
 app.post("/transcribe", async (req: Request, res: Response) => {
