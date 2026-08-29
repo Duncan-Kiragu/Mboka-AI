@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Mboka AI — Simu</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --ink: #1c1914;
+      --muted: #5c564c;
+      --green: #1f6b3a;
+      --green-dark: #164a28;
+      --terracotta: #c45c26;
+      --card: #fffdf8;
+      --line: #e4d9c8;
+      --err: #9b1c1c;
+      --ok: #1f6b3a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 440px; margin: 0 auto; padding: 20px 16px 48px; }
+    header h1 { margin: 0; font-size: 1.7rem; letter-spacing: -0.03em; }
+    header p { margin: 6px 0 0; color: var(--muted); font-size: 0.95rem; }
+    .nav { margin-top: 10px; font-size: 0.9rem; }
+    .nav a { color: var(--green); }
+
+    .phone-bar { display: flex; gap: 8px; margin-top: 14px; }
+    .phone-bar input {
+      flex: 1; padding: 10px 12px; border: 1px solid var(--line);
+      border-radius: 10px; font: inherit; background: #fff;
+    }
+
+    .recorder {
+      background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+      padding: 28px 16px 22px; margin-top: 16px; text-align: center;
+    }
+    #micBtn {
+      width: 128px; height: 128px; border: 0; border-radius: 50%;
+      background: var(--green); color: #fff; font-size: 3rem; cursor: pointer;
+      box-shadow: 0 10px 24px rgba(31, 107, 58, 0.28);
+    }
+    #micBtn:active { transform: scale(0.97); }
+    #micBtn:disabled { opacity: 0.55; cursor: default; }
+    #micBtn.recording { background: var(--terracotta); animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(196, 92, 38, 0.45); }
+      50% { box-shadow: 0 0 0 18px rgba(196, 92, 38, 0); }
+    }
+    #micHint { margin: 14px 0 0; color: var(--muted); font-size: 0.9rem; }
+
+    .prompt {
+      margin-top: 16px; background: var(--card); border: 1px solid var(--line);
+      border-radius: 16px; padding: 16px;
+    }
+    .prompt .label {
+      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin-bottom: 6px;
+    }
+    .prompt .say { font-size: 1.15rem; font-weight: 600; margin: 0; }
+    .replay {
+      margin-top: 10px; border: 1px solid var(--line); background: #fff;
+      border-radius: 999px; padding: 6px 14px; font: inherit; cursor: pointer;
+    }
+
+    .log { margin-top: 16px; }
+    .turn {
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+      padding: 10px 12px; margin-bottom: 8px; font-size: 0.92rem;
+    }
+    .turn .who {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .turn.caller { border-left: 3px solid var(--terracotta); }
+    .turn.mboka { border-left: 3px solid var(--green); }
+
+    .fields {
+      margin-top: 16px; background: var(--card); border: 1px solid var(--line);
+      border-radius: 16px; padding: 14px 16px;
+    }
+    .fields h2 { margin: 0 0 10px; font-size: 0.95rem; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 0.93rem; }
+    .row span:first-child { color: var(--muted); }
+    .row .missing { color: var(--terracotta); font-style: italic; }
+
+    .actions { display: none; gap: 10px; margin-top: 14px; }
+    .actions.show { display: flex; }
+    .actions button { flex: 1; padding: 13px; border-radius: 12px; font: inherit; font-weight: 600; cursor: pointer; border: 0; }
+    #yesBtn { background: var(--green); color: #fff; }
+    #noBtn { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+
+    .banner { margin-top: 14px; padding: 11px 13px; border-radius: 12px; font-size: 0.92rem; display: none; }
+    .banner.show { display: block; }
+    .banner.error { background: #fdecec; color: var(--err); border: 1px solid #f3c9c9; }
+    .banner.info { background: #eaf3ec; color: var(--ok); border: 1px solid #cfe4d5; }
+
+    .done { margin-top: 16px; padding: 16px; border-radius: 16px; background: #eaf3ec; border: 1px solid #cfe4d5; display: none; }
+    .done.show { display: block; }
+    .done a { color: var(--green-dark); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Mboka AI — Simu</h1>
+      <p>Piga simu, sema unachouza. Tutakuuliza swali moja moja.</p>
+      <div class="nav"><a href="/index.html">Web</a> · <a href="/feed.html">Feed</a> · <a href="/ussd.html">USSD</a></div>
+    </header>
+
+    <div class="phone-bar">
+      <input id="myPhone" type="tel" inputmode="tel" placeholder="Namba yako, e.g. 0712345678" />
+    </div>
+
+    <div class="recorder">
+      <button id="micBtn" aria-label="Rekodi">&#127908;</button>
+      <p id="micHint">Gonga kuanza simu</p>
+    </div>
+
+    <div class="prompt" id="promptBox" style="display:none">
+      <div class="label">Mboka anasema</div>
+      <p class="say" id="promptSay"></p>
+      <button class="replay" id="replayBtn">&#128266; Sikiliza tena</button>
+    </div>
+
+    <div class="actions" id="actions">
+      <button id="yesBtn">Ndio</button>
+      <button id="noBtn">Hapana</button>
+    </div>
+
+    <div class="banner" id="banner"></div>
+
+    <div class="done" id="done">
+      <strong>Imewekwa.</strong>
+      <p id="doneText" style="margin:6px 0 0"></p>
+      <p style="margin:10px 0 0"><a href="/feed.html">Angalia kwenye feed &rarr;</a></p>
+    </div>
+
+    <div class="fields" id="fieldsBox" style="display:none">
+      <h2>Tumesikia hadi sasa</h2>
+      <div class="row"><span>Kitu</span><span id="fItem" class="missing">—</span></div>
+      <div class="row"><span>Bei</span><span id="fPrice" class="missing">—</span></div>
+      <div class="row"><span>Mahali</span><span id="fLocation" class="missing">—</span></div>
+      <div class="row"><span>Aina</span><span id="fCategory" class="missing">—</span></div>
+    </div>
+
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    const micBtn = document.getElementById("micBtn");
+    const micHint = document.getElementById("micHint");
+    const myPhone = document.getElementById("myPhone");
+    const promptBox = document.getElementById("promptBox");
+    const promptSay = document.getElementById("promptSay");
+    const replayBtn = document.getElementById("replayBtn");
+    const actions = document.getElementById("actions");
+    const yesBtn = document.getElementById("yesBtn");
+    const noBtn = document.getElementById("noBtn");
+    const banner = document.getElementById("banner");
+    const doneBox = document.getElementById("done");
+    const doneText = document.getElementById("doneText");
+    const fieldsBox = document.getElementById("fieldsBox");
+    const log = document.getElementById("log");
+
+    const OPENING = "Karibu Mboka. Unauza nini?";
+
+    let sessionId = "";
+    let mode = "idle";
+    let recording = false;
+    let busy = false;
+    let mediaRecorder = null;
+    let mediaStream = null;
+    let chunks = [];
+    let lastSay = "";
+
+    function showBanner(text, kind) {
+      banner.textContent = text;
+      banner.className = "banner show " + (kind || "info");
+    }
+    function hideBanner() { banner.className = "banner"; }
+
+    function addTurn(who, text) {
+      const div = document.createElement("div");
+      div.className = "turn " + (who === "Wewe" ? "caller" : "mboka");
+      div.innerHTML = '<div class="who"></div><div class="what"></div>';
+      div.querySelector(".who").textContent = who;
+      div.querySelector(".what").textContent = text;
+      log.appendChild(div);
+    }
+
+    function setField(el, value) {
+      if (value === "" || value === null || value === undefined) {
+        el.textContent = "—";
+        el.className = "missing";
+        return;
+      }
+      el.textContent = String(value);
+      el.className = "";
+    }
+
+    function renderFields(fields) {
+      if (!fields) return;
+      fieldsBox.style.display = "block";
+      setField(document.getElementById("fItem"), fields.item);
+      setField(document.getElementById("fPrice"), fields.price === "" ? "" : "KSh " + fields.price);
+      setField(document.getElementById("fLocation"), fields.location);
+      setField(document.getElementById("fCategory"), fields.category);
+    }
+
+    function pickMimeType() {
+      const options = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+      for (const type of options) {
+        if (MediaRecorder.isTypeSupported(type)) return type;
+      }
+      return "";
+    }
+
+    function blobToBase64(blob) {
+      return new Promise(function (resolve, reject) {
+        const reader = new FileReader();
+        reader.onloadend = function () {
+          const result = String(reader.result || "");
+          resolve(result.slice(result.indexOf(",") + 1));
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    /** Play a line through P2's /speak. Failure is non-fatal — the text is on screen. */
+    async function speak(text) {
+      if (!text) return;
+      try {
+        const res = await fetch("/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text })
+        });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        await audio.play().catch(function () {});
+        audio.onended = function () { URL.revokeObjectURL(url); };
+      } catch (e) { /* silent — the caller still sees the line */ }
+    }
+
+    function cleanupStream() {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(function (t) { t.stop(); });
+        mediaStream = null;
+      }
+    }
+
+    async function startRecording() {
+      hideBanner();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showBanner("This browser cannot record audio. Try Chrome on a phone or laptop.", "error");
+        return;
+      }
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true }
+        });
+      } catch (err) {
+        const denied = err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
+        showBanner(
+          denied
+            ? "Microphone permission denied. Allow the mic in your browser settings, then tap again."
+            : "Could not open the microphone. Check that no other app is using it.",
+          "error"
+        );
+        return;
+      }
+      chunks = [];
+      const mime = pickMimeType();
+      try {
+        mediaRecorder = mime
+          ? new MediaRecorder(mediaStream, { mimeType: mime })
+          : new MediaRecorder(mediaStream);
+      } catch (err) {
+        cleanupStream();
+        showBanner("Could not start the recorder in this browser.", "error");
+        return;
+      }
+      mediaRecorder.ondataavailable = function (e) {
+        if (e.data && e.data.size) chunks.push(e.data);
+      };
+      mediaRecorder.onstop = function () {
+        const type = (mediaRecorder && mediaRecorder.mimeType) || mime || "audio/webm";
+        const blob = new Blob(chunks, { type: type });
+        cleanupStream();
+        sendTurn(blob);
+      };
+      mediaRecorder.start(200);
+      recording = true;
+      micBtn.classList.add("recording");
+      micHint.textContent = "Inasikiliza… gonga kusimamisha";
+    }
+
+    function stopRecording() {
+      if (!recording || !mediaRecorder) return;
+      recording = false;
+      micBtn.classList.remove("recording");
+      try {
+        if (mediaRecorder.state !== "inactive") mediaRecorder.stop();
+      } catch (e) {
+        cleanupStream();
+        showBanner("Recording stopped unexpectedly. Try again.", "error");
+      }
+    }
+
+    /** Apply whatever the server told us to say next. */
+    async function applyPrompt(data) {
+      mode = data.mode || "question";
+      lastSay = data.say || "";
+      renderFields(data.fields);
+
+      if (lastSay) {
+        promptBox.style.display = "block";
+        promptSay.textContent = lastSay;
+        addTurn("Mboka", lastSay);
+      }
+
+      actions.className = mode === "confirm" ? "actions show" : "actions";
+
+      if (mode === "done") {
+        doneBox.className = "done show";
+        const listing = data.listing;
+        doneText.textContent = listing
+          ? listing.item + " — KSh " + (listing.price === null ? "?" : listing.price) + " — " + listing.location
+          : "";
+        micBtn.disabled = true;
+        micHint.textContent = "Simu imeisha";
+      } else {
+        micHint.textContent = "Gonga ujibu";
+      }
+
+      await speak(lastSay);
+    }
+
+    async function postJSON(url, body) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(function () { return {}; });
+      return { ok: res.ok, data: data };
+    }
+
+    /** First turn opens the session with P6's /call/record, later turns go to /call/answer. */
+    async function sendTurn(blob) {
+      busy = true;
+      micBtn.disabled = true;
+      micHint.textContent = "Inasikia…";
+      try {
+        if (!blob.size) {
+          showBanner("Recording was empty. Tap the mic and speak, then stop.", "error");
+          return;
+        }
+        const audio = await blobToBase64(blob);
+        const mimeType = blob.type || "audio/webm";
+
+        if (!sessionId) {
+          const started = await postJSON("/call/record", {
+            audio: audio,
+            mimeType: mimeType,
+            phoneNumber: myPhone.value.trim()
+          });
+          if (!started.ok) {
+            showBanner(started.data.error || "Transcription failed. Try again.", "error");
+            return;
+          }
+          sessionId = started.data.sessionId;
+          addTurn("Wewe", started.data.transcript || "");
+
+          const next = await postJSON("/call/next", { sessionId: sessionId });
+          if (!next.ok) {
+            showBanner(next.data.error || "Something went wrong. Try again.", "error");
+            return;
+          }
+          await applyPrompt(next.data);
+          return;
+        }
+
+        const turn = await postJSON("/call/answer", {
+          sessionId: sessionId,
+          audio: audio,
+          mimeType: mimeType
+        });
+        if (!turn.ok) {
+          showBanner(turn.data.error || "Transcription failed. Try answering again.", "error");
+          return;
+        }
+        if (turn.data.transcript) addTurn("Wewe", turn.data.transcript);
+        await applyPrompt(turn.data);
+      } catch (err) {
+        showBanner("Network problem. Check your connection and retry.", "error");
+      } finally {
+        busy = false;
+        if (mode !== "done") micBtn.disabled = false;
+        micBtn.classList.remove("recording");
+      }
+    }
+
+    /** Tap fallback for the yes/no, in case STT mishears the confirmation. */
+    async function tapConfirm(agree) {
+      if (!sessionId || busy) return;
+      busy = true;
+      actions.className = "actions";
+      try {
+        const res = await postJSON("/call/confirm", { sessionId: sessionId, agree: agree });
+        if (!res.ok) {
+          showBanner(res.data.error || "Could not confirm. Try again.", "error");
+          return;
+        }
+        addTurn("Wewe", agree ? "Ndio" : "Hapana");
+        await applyPrompt(res.data);
+      } finally {
+        busy = false;
+      }
+    }
+
+    micBtn.addEventListener("click", function () {
+      if (busy) return;
+      if (recording) stopRecording();
+      else startRecording();
+    });
+    replayBtn.addEventListener("click", function () { speak(lastSay); });
+    yesBtn.addEventListener("click", function () { tapConfirm(true); });
+    noBtn.addEventListener("click", function () { tapConfirm(false); });
+
+    promptBox.style.display = "block";
+    promptSay.textContent = OPENING;
+    lastSay = OPENING;
+  </script>
+</body>
+</html>

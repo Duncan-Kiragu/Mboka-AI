@@ -191,6 +191,7 @@
       <div>
         <h2>Live feed</h2>
         <a class="market-link" href="/feed.html">Open marketplace</a>
+        <a class="market-link" href="/call.html">Sell by call</a>
       </div>
       <div class="feed-tabs">
         <button type="button" id="tabAll" class="active">All</button>
@@ -475,7 +476,9 @@
           return;
         }
         const audio = await blobToBase64(blob);
-        const res = await fetch("/call/record", {
+        // Plain STT for the web path. /call/record is the call intake — posting
+        // here opened a dialogue session per web recording that nothing closed.
+        const res = await fetch("/transcribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

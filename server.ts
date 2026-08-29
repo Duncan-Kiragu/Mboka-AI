@@ -11,6 +11,9 @@
  *   POST /transcribe        { audio, mimeType } → { transcript }
  *   POST /speak             { text } → audio/mpeg
  *   POST /call/record       tap-to-record audio → STT → log transcript
+ *   POST /call/next         { sessionId } → next spoken prompt
+ *   POST /call/answer       { sessionId, audio } → one dialogue turn
+ *   POST /call/confirm      { sessionId, agree } → write the listing
  *
  * Storage is an in-memory array (resets on every Render sleep/redeploy).
  * Swap `listings` for a database later without changing the JSON shape.
@@ -21,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import express, { type Request, type Response } from "express";
 import { callRouter } from "./routes/call.js";
 import { extractFromTranscript, extractWithRegex } from "./lib/extract.js";
-import { store } from "./lib/store";
+import { store } from "./lib/store.js";
 
 if (existsSync(".env")) {
   for (const line of readFileSync(".env", "utf8").split("\n")) {

@@ -76,9 +76,9 @@ Put a name next to each. One owner per file after the split.
      3. Route B (the callbackUrl from the `<Record>` action): AT POSTs the finished recording's URL here. Pass it to the STT helper, `console.log` the transcript.
      4. Every route must respond with valid `<Response>` XML, even the last one, or AT drops the call as malformed. At 20 minutes with no working sandbox number: stop, go help P5 or P8. Screen-record whatever partial flow you have (even just the greeting playing) as a fallback demo asset.
    - Done when: you can dial in, hear the greeting, speak, and see a transcript land in the server logs. Nothing gets written to the store yet — that's P7. Coordinate with P7 before you both touch `routes/call.ts` — agree on the shape of the transcript hand-off (e.g. does Route B call P7's function directly, or write to a shared in-memory object?) before either of you starts typing.
-7. **P7 — Call: confirm and post**
+7. P7 — Call: confirm and post**
    - Files: `routes/call.ts`, alongside P6 (P6 owns inbound audio; P7 owns dialogue + write)
-   - Take the transcript P6 produces, call the same `POST /extract` used by the web path.
+   - Take the** transcript P6 produces, call the same `POST /extract` used by the web path.
    - If item, price, or location is missing, ask one spoken follow-up at a time (e.g. "Bei ni ngapi?") — not a list of questions.
    - Once all three are present, have ElevenLabs read the summary back and ask for confirmation.
    - On "yes": `POST /listings` with `source_channel: "call"`.
