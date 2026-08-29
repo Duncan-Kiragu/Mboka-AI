@@ -18,7 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type Request, type Response } from "express";
-import { extractFromTranscript, extractWithRegex } from "./lib/extract.ts";
+import { extractFromTranscript, extractWithRegex } from "./lib/extract.js";
 import { store } from "./lib/store";
 
 if (existsSync(".env")) {
