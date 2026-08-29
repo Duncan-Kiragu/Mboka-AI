@@ -7,6 +7,7 @@
  *   GET  /listings/:id
  *   POST /listings
  *   PATCH /listings/:id     { status: "sold" } or field edits
+ *   POST /extract           { transcript, conversation_id? }
  *   POST /transcribe        { audio, mimeType } → { transcript }
  *   POST /speak             { text } → audio/mpeg
  *   POST /call/record       tap-to-record audio → STT → log transcript
@@ -19,6 +20,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type Request, type Response } from "express";
 import { callRouter } from "./routes/call.js";
+import { extractFromTranscript, extractWithRegex } from "./lib/extract.js";
+import { store } from "./lib/store";
 
 if (existsSync(".env")) {
   for (const line of readFileSync(".env", "utf8").split("\n")) {
@@ -45,124 +48,6 @@ const ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
 const ELEVENLABS_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb";
 const ELEVENLABS_TTS_URL = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`;
 
-const CATEGORIES = [
-  "furniture",
-  "clothing",
-  "food",
-  "services",
-  "electronics",
-  "other",
-] as const;
-
-type Category = (typeof CATEGORIES)[number];
-type SourceChannel = "web" | "call" | "ussd";
-type ListingStatus = "active" | "sold" | "flagged" | "removed";
-
-type Listing = {
-  id: string;
-  item: string;
-  category: Category;
-  price: number | null;
-  condition: string;
-  location: string;
-  contact: string;
-  source_channel: SourceChannel;
-  photo_url: string;
-  extra_notes: string;
-  status: ListingStatus;
-  created_at: string;
-};
-
-function asCategory(value: unknown): Category {
-  return CATEGORIES.includes(value as Category) ? (value as Category) : "other";
-}
-
-function asPrice(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const n = Number(value.replace(/[,\s]/g, ""));
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-const listings: Listing[] = [
-  {
-    id: "demo-1",
-    item: "Meza ya mbao, hali nzuri",
-    category: "furniture",
-    price: 3500,
-    condition: "used",
-    location: "Kawangware",
-    contact: "0712000001",
-    source_channel: "web",
-    photo_url: "",
-    extra_notes: "",
-    status: "active",
-    created_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-  },
-  {
-    id: "demo-2",
-    item: "Shati mpya, size M",
-    category: "clothing",
-    price: 800,
-    condition: "new",
-    location: "Eastleigh",
-    contact: "0712000002",
-    source_channel: "web",
-    photo_url: "",
-    extra_notes: "",
-    status: "active",
-    created_at: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-  },
-  {
-    id: "demo-3",
-    item: "Fundi umeme — wiring na sockets",
-    category: "services",
-    price: 1500,
-    condition: "",
-    location: "Kayole",
-    contact: "0712000003",
-    source_channel: "web",
-    photo_url: "",
-    extra_notes: "Bei ni kwa job ndogo ndani ya Kayole.",
-    status: "active",
-    created_at: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
-  },
-  {
-    id: "demo-4",
-    item: "Mboga fresh — sukuma, nyanya, kitungu",
-    category: "food",
-    price: 50,
-    condition: "new",
-    location: "Githurai",
-    contact: "0712000004",
-    source_channel: "ussd",
-    photo_url: "",
-    extra_notes: "Seeded as USSD so the feed can show mixed channels.",
-    status: "active",
-    created_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-  },
-  {
-    id: "demo-5",
-    item: "Radio ya nyumbani",
-    category: "electronics",
-    price: 2500,
-    condition: "used",
-    location: "Embakasi",
-    contact: "0712000005",
-    source_channel: "web",
-    photo_url: "",
-    extra_notes: "",
-    status: "active",
-    created_at: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
-  },
-];
-
 function requireApiKey(): string {
   const key = process.env.ELEVENLABS_API_KEY?.trim();
   if (!key) {
@@ -181,12 +66,6 @@ function filenameForMime(mimeType: string): string {
   return "recording.webm";
 }
 
-function newestFirst(rows: Listing[]): Listing[] {
-  return [...rows].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
-}
-
 const app = express();
 app.use(express.json({ limit: "15mb" }));
 app.use(callRouter);
@@ -194,17 +73,20 @@ app.use(callRouter);
 app.get("/health", (_req: Request, res: Response) => {
   res.json({
     ok: true,
-    listings: listings.length,
+    listings: store.count(),
     elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY?.trim()),
+    claude: Boolean(
+      (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "").trim()
+    ),
   });
 });
 
 app.get("/listings", (_req: Request, res: Response) => {
-  res.json(newestFirst(listings.filter((row) => row.status !== "removed")));
+  res.json(store.list());
 });
 
 app.get("/listings/:id", (req: Request, res: Response) => {
-  const row = listings.find((item) => item.id === req.params.id);
+  const row = store.get(req.params.id);
   if (!row) {
     res.status(404).json({ error: "Listing not found." });
     return;
@@ -213,44 +95,35 @@ app.get("/listings/:id", (req: Request, res: Response) => {
 });
 
 app.post("/listings", (req: Request, res: Response) => {
-  const body = req.body ?? {};
-  const listing: Listing = {
-    id: `listing-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    item: asString(body.item),
-    category: asCategory(body.category),
-    price: asPrice(body.price),
-    condition: asString(body.condition),
-    location: asString(body.location),
-    contact: asString(body.contact),
-    source_channel: body.source_channel === "call" || body.source_channel === "ussd" ? body.source_channel : "web",
-    photo_url: asString(body.photo_url),
-    extra_notes: asString(body.extra_notes),
-    status: "active",
-    created_at: new Date().toISOString(),
-  };
-  listings.push(listing);
-  res.status(201).json(listing);
+  res.status(201).json(store.create(req.body ?? {}));
 });
 
 app.patch("/listings/:id", (req: Request, res: Response) => {
-  const row = listings.find((item) => item.id === req.params.id);
+  const row = store.patch(req.params.id, req.body ?? {});
   if (!row) {
     res.status(404).json({ error: "Listing not found." });
     return;
   }
-  const body = req.body ?? {};
-  if (typeof body.item === "string") row.item = body.item.trim();
-  if (body.category !== undefined) row.category = asCategory(body.category);
-  if (body.price !== undefined) row.price = asPrice(body.price);
-  if (typeof body.condition === "string") row.condition = body.condition.trim();
-  if (typeof body.location === "string") row.location = body.location.trim();
-  if (typeof body.contact === "string") row.contact = body.contact.trim();
-  if (typeof body.extra_notes === "string") row.extra_notes = body.extra_notes.trim();
-  if (typeof body.photo_url === "string") row.photo_url = body.photo_url.trim();
-  if (body.status === "active" || body.status === "sold" || body.status === "flagged" || body.status === "removed") {
-    row.status = body.status;
-  }
   res.json(row);
+});
+
+app.post("/extract", async (req: Request, res: Response) => {
+  const transcript = typeof req.body?.transcript === "string" ? req.body.transcript : "";
+  const conversationId =
+    typeof req.body?.conversation_id === "string" ? req.body.conversation_id : "";
+  try {
+    const result = await extractFromTranscript(transcript, {
+      conversationId,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("POST /extract", err);
+    res.json({
+      ...extractWithRegex(transcript),
+      conversation_id: conversationId,
+      source: "regex",
+    });
+  }
 });
 
 app.post("/transcribe", async (req: Request, res: Response) => {

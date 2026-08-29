@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="description" content="Browse live jua kali listings. Open a listing for details, voice, Call and WhatsApp." />
+  <title>Mboka — Marketplace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/feed.css" />
+</head>
+<body data-page="buyer">
+  <a class="skip" href="#main">Skip to listings</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/feed.html">Mboka</a>
+      <nav class="top-nav" aria-label="Primary">
+        <a href="/feed.html" aria-current="page">Browse</a>
+        <a href="/">Sell</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="shell">
+    <section id="feedView" class="view">
+      <div class="page-head">
+        <h1>Marketplace</h1>
+        <p class="lede">Newest listings from web, call, and USSD.</p>
+      </div>
+
+      <label class="search">
+        <span class="visually-hidden">Search listings</span>
+        <input id="searchQuery" type="search" placeholder="Search items or areas" autocomplete="off" />
+      </label>
+
+      <div class="chips" id="filters" role="tablist" aria-label="Category"></div>
+
+      <div class="toolbar">
+        <select id="locationFilter" aria-label="Filter by location"></select>
+        <div class="feed-tabs" role="tablist" aria-label="Whose listings">
+          <button type="button" id="tabAll" class="active">All</button>
+          <button type="button" id="tabMine">Mine</button>
+        </div>
+      </div>
+
+      <label class="phone-row">
+        <span>Your phone</span>
+        <input id="myPhone" type="tel" inputmode="tel" placeholder="Needed for Mine" autocomplete="tel" />
+      </label>
+
+      <div class="feed-meta">
+        <p id="feedCount">Loading listings…</p>
+        <p id="feedUpdated"></p>
+      </div>
+
+      <div id="feed" class="feed-grid" aria-live="polite"></div>
+    </section>
+
+    <section id="detailView" class="view" hidden>
+      <div id="detailPage"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/feed.js"></script>
+</body>
+</html>
