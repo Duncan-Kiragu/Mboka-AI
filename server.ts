@@ -9,6 +9,7 @@
  *   PATCH /listings/:id     { status: "sold" } or field edits
  *   POST /transcribe        { audio, mimeType } → { transcript }
  *   POST /speak             { text } → audio/mpeg
+ *   POST /call/record       tap-to-record audio → STT → log transcript
  *
  * Storage is an in-memory array (resets on every Render sleep/redeploy).
  * Swap `listings` for a database later without changing the JSON shape.
@@ -17,6 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type Request, type Response } from "express";
+import { callRouter } from "./routes/call.js";
 
 if (existsSync(".env")) {
   for (const line of readFileSync(".env", "utf8").split("\n")) {
@@ -187,6 +189,7 @@ function newestFirst(rows: Listing[]): Listing[] {
 
 const app = express();
 app.use(express.json({ limit: "15mb" }));
+app.use(callRouter);
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({
