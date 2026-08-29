@@ -191,27 +191,6 @@
   </div>
 
   <script>
-    /*
-      Extraction lives here on purpose (no LLM key required).
-      To swap in an LLM later: keep this function's return shape and
-      replace the body with a fetch to a new POST /extract endpoint.
-    */
-    const LOCATIONS = [
-      "Kawangware", "Kayole", "Eastleigh", "Kibra", "Ngong Road",
-      "Westlands", "CBD", "Kasarani", "Umoja", "Dagoretti",
-      "Rongai", "Buruburu", "Githurai", "Embakasi", "Langata"
-    ];
-    const CATEGORY_KEYWORDS = {
-      furniture: ["viti", "meza", "mbao", "kabati"],
-      clothing: ["nguo", "shati", "sketi"],
-      food: ["chakula", "mboga", "matunda"],
-      services: ["fundi", "umeme", "bomba", "ukarabati"],
-      electronics: ["simu", "radio", "laptop", "tv"]
-    };
-    const NUMBER_WORDS = {
-      moja: 1, mbili: 2, tatu: 3, nne: 4, tano: 5,
-      sita: 6, saba: 7, nane: 8, tisa: 9, kumi: 10
-    };
     const FILTERS = ["all", "furniture", "clothing", "food", "services", "electronics", "other"];
     const PHONE_KEY = "mboka-phone";
     const SILENCE_MS = 2000;
@@ -255,6 +234,8 @@
     let activeLocation = "all";
     let showMine = false;
     let pendingAudioUrl = "";
+    let pendingExtraNotes = "";
+    let extractConversationId = "";
 
     myPhone.value = localStorage.getItem(PHONE_KEY) || "";
     myPhone.addEventListener("change", function () {
@@ -284,63 +265,6 @@
       return "https://wa.me/" + n;
     }
 
-    function extractPrice(text) {
-      try {
-        const lower = text.toLowerCase();
-        const elfuWord = lower.match(/\belfu\s+(moja|mbili|tatu|nne|tano|sita|saba|nane|tisa|kumi)\b/);
-        if (elfuWord) return String(NUMBER_WORDS[elfuWord[1]] * 1000);
-        const elfuDigit = lower.match(/\belfu\s+(\d+)\b/);
-        if (elfuDigit) return String(Number(elfuDigit[1]) * 1000);
-        const nearCurrency = text.match(/(?:kshs?|kes|bob|shilingi|shillings?)\s*[.:]?\s*(\d{1,3}(?:[,\s]\d{3})+|\d+)/i)
-          || text.match(/(\d{1,3}(?:[,\s]\d{3})+|\d+)\s*(?:kshs?|kes|bob|shilingi|shillings?)/i);
-        if (nearCurrency) return nearCurrency[1].replace(/[,\s]/g, "");
-        const grouped = text.match(/\b\d{1,3}(?:[,\s]\d{3})+\b/);
-        if (grouped) return grouped[0].replace(/[,\s]/g, "");
-        const digits = text.match(/\b\d{2,7}\b/g);
-        if (!digits || !digits.length) return "";
-        return String(Math.max.apply(null, digits.map(Number)));
-      } catch (e) { return ""; }
-    }
-    function extractLocation(text) {
-      try {
-        const lower = text.toLowerCase();
-        for (let i = 0; i < LOCATIONS.length; i++) {
-          if (lower.indexOf(LOCATIONS[i].toLowerCase()) !== -1) return LOCATIONS[i];
-        }
-        return "";
-      } catch (e) { return ""; }
-    }
-    function extractCategory(text) {
-      try {
-        const lower = text.toLowerCase();
-        const names = Object.keys(CATEGORY_KEYWORDS);
-        for (let i = 0; i < names.length; i++) {
-          const words = CATEGORY_KEYWORDS[names[i]];
-          for (let j = 0; j < words.length; j++) {
-            if (lower.indexOf(words[j]) !== -1) return names[i];
-          }
-        }
-        return "other";
-      } catch (e) { return "other"; }
-    }
-    function extractCondition(text) {
-      try {
-        const lower = text.toLowerCase();
-        if (/\b(mpya|brand new|new)\b/.test(lower)) return "new";
-        if (/\b(used|imetumika|old)\b/.test(lower)) return "used";
-        return "";
-      } catch (e) { return ""; }
-    }
-    function extractListing(transcript) {
-      const text = (transcript || "").trim();
-      return {
-        item: text,
-        price: extractPrice(text),
-        location: extractLocation(text),
-        category: extractCategory(text),
-        condition: extractCondition(text)
-      };
-    }
     function confirmationSummary(fields) {
       const item = fields.item || "bidhaa";
       const parts = ["Umeongeza: " + item];
@@ -525,7 +449,7 @@
           showBanner("Heard nothing we could transcribe. Try speaking a bit louder and retry.", "error");
           return;
         }
-        openConfirmPanel(transcript);
+        await openConfirmPanel(transcript);
       } catch (err) {
         showBanner("Transcription failed. Check your connection and retry.", "error");
       } finally {
@@ -571,12 +495,40 @@
         showBanner("Could not play confirmation audio. You can still confirm.", "error");
       }
     }
-    function openConfirmPanel(transcript) {
+    async function openConfirmPanel(transcript) {
       hideBanner();
-      const extracted = extractListing(transcript);
+      let extracted = {
+        item: "",
+        price: "",
+        location: "",
+        category: "",
+        condition: "",
+        extra_notes: ""
+      };
+      try {
+        const res = await fetch("/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transcript: transcript,
+            conversation_id: extractConversationId
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          extracted.item = data.item || "";
+          extracted.price = data.price === 0 || data.price ? data.price : "";
+          extracted.location = data.location || "";
+          extracted.category = data.category || "";
+          extracted.condition = data.condition || "";
+          extracted.extra_notes = data.extra_notes || "";
+          if (data.conversation_id) extractConversationId = data.conversation_id;
+        }
+      } catch (err) {}
+      pendingExtraNotes = extracted.extra_notes || "";
       rawTranscriptEl.textContent = 'Heard: "' + transcript + '"';
       fieldItem.value = extracted.item;
-      fieldPrice.value = extracted.price;
+      fieldPrice.value = extracted.price === "" || extracted.price == null ? "" : String(extracted.price);
       fieldLocation.value = extracted.location;
       fieldCategory.value = extracted.category || "other";
       fieldCondition.value = extracted.condition;
@@ -617,6 +569,7 @@
             condition: fields.condition,
             contact: fields.contact,
             photo_url: photo_url,
+            extra_notes: pendingExtraNotes,
             source_channel: "web"
           })
         });
