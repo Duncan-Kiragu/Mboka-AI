@@ -257,8 +257,12 @@ function readCorrection(text: string): Slot | null {
 }
 
 function dialogueFor(session: CallSession): DialogueState {
+  pruneDialogues();
   const existing = dialogues.get(session.sessionId);
-  if (existing) return existing;
+  if (existing) {
+    existing.updatedAt = Date.now();
+    return existing;
+  }
   const created: DialogueState = {
     conversationId: `call-${session.sessionId}`,
     accumulated: session.transcript,
@@ -266,6 +270,7 @@ function dialogueFor(session: CallSession): DialogueState {
     awaiting: "item",
     correcting: null,
     listingId: "",
+    updatedAt: Date.now(),
   };
   dialogues.set(session.sessionId, created);
   return created;
@@ -526,6 +531,7 @@ callRouter.post("/call/confirm", (req: Request, res: Response) => {
     res.status(409).json({ error: "No dialogue in progress for this session." });
     return;
   }
+  state.updatedAt = Date.now();
   if (state.awaiting === "done") {
     res.json(doneReply(session.sessionId, state, DONE_LINE));
     return;
