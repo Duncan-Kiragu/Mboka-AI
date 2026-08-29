@@ -86,6 +86,11 @@
     }
     .field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff; }
     .transcript { font-size: 0.85rem; color: var(--muted); background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+    .extract-hint {
+      margin: -4px 0 12px; padding: 10px 12px;
+      border-radius: 10px; border-left: 4px solid var(--terracotta);
+      background: #fdf4ee; color: var(--ink); font-size: 0.85rem; text-align: left;
+    }
     .row-btns { display: flex; gap: 8px; margin-top: 14px; }
     .row-btns button {
       flex: 1; border: 0; border-radius: 12px; padding: 12px;
@@ -162,6 +167,7 @@
     <section id="confirmPanel">
       <h2>Confirm listing</h2>
       <div class="transcript" id="rawTranscript"></div>
+      <p id="extractHint" class="extract-hint" hidden></p>
       <div class="field"><label for="fieldItem">Item</label><input id="fieldItem" type="text" /></div>
       <div class="field"><label for="fieldPrice">Price (KSh)</label><input id="fieldPrice" type="text" inputmode="numeric" /></div>
       <div class="field"><label for="fieldLocation">Location</label><input id="fieldLocation" type="text" /></div>
@@ -204,27 +210,9 @@
 
   <script>
     /*
-      Extraction lives here on purpose (no LLM key required).
-      To swap in an LLM later: keep this function's return shape and
-      replace the body with a fetch to a new POST /extract endpoint.
+      Confirm-panel fields come from POST /extract.
+      On failure the form still opens; fill manually or Re-record.
     */
-    const LOCATIONS = [
-      "Kawangware", "Kayole", "Eastleigh", "Kibra", "Ngong Road",
-      "Westlands", "CBD", "Kasarani", "Umoja", "Dagoretti",
-      "Rongai", "Buruburu", "Githurai", "Embakasi", "Langata"
-    ];
-    const CATEGORY_KEYWORDS = {
-      furniture: ["viti", "meza", "mbao", "kabati"],
-      clothing: ["nguo", "shati", "sketi"],
-      food: ["chakula", "mboga", "matunda"],
-      services: ["fundi", "umeme", "bomba", "ukarabati"],
-      electronics: ["simu", "radio", "laptop", "tv"]
-    };
-    const NUMBER_WORDS = {
-      moja: 1, mbili: 2, tatu: 3, nne: 4, tano: 5,
-      sita: 6, saba: 7, nane: 8, tisa: 9, kumi: 10
-    };
-    const FILTERS = ["all", "furniture", "clothing", "food", "services", "electronics", "other"];
     const PHONE_KEY = "mboka-phone";
     const SILENCE_MS = 2000;
     const MIN_RECORD_MS = 800;
@@ -236,6 +224,7 @@
     const statusBanner = document.getElementById("statusBanner");
     const confirmPanel = document.getElementById("confirmPanel");
     const rawTranscriptEl = document.getElementById("rawTranscript");
+    const extractHint = document.getElementById("extractHint");
     const fieldItem = document.getElementById("fieldItem");
     const fieldPrice = document.getElementById("fieldPrice");
     const fieldLocation = document.getElementById("fieldLocation");
@@ -513,8 +502,50 @@
         location: fieldLocation.value.trim(),
         category: fieldCategory.value || "other",
         condition: fieldCondition.value.trim(),
-        contact: fieldContact.value.trim() || myPhone.value.trim()
+        contact: fieldContact.value.trim() || myPhone.value.trim(),
+        extra_notes: pendingExtraNotes
       };
+    }
+    function blankExtracted() {
+      return { item: "", category: "other", price: "", condition: "", location: "", extra_notes: "" };
+    }
+    function normalizeExtracted(data) {
+      const price = data && data.price != null && data.price !== "" ? String(data.price) : "";
+      return {
+        item: (data && data.item) || "",
+        category: (data && data.category) || "other",
+        price: price,
+        condition: (data && data.condition) || "",
+        location: (data && data.location) || "",
+        extra_notes: (data && data.extra_notes) || ""
+      };
+    }
+    async function loadExtractedFields(transcript) {
+      try {
+        const res = await fetch("/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript: transcript })
+        });
+        if (!res.ok) return { extracted: blankExtracted(), extractFailed: true };
+        const data = await res.json();
+        return { extracted: normalizeExtracted(data), extractFailed: false };
+      } catch (e) {
+        return { extracted: blankExtracted(), extractFailed: true };
+      }
+    }
+    function showExtractHint(fields) {
+      const missing = [];
+      if (!(fields.item || "").trim()) missing.push("item");
+      if (!(fields.price || "").trim()) missing.push("price");
+      if (!(fields.location || "").trim()) missing.push("location");
+      if (!missing.length) {
+        extractHint.hidden = true;
+        extractHint.textContent = "";
+        return;
+      }
+      extractHint.hidden = false;
+      extractHint.textContent = "Missing " + missing.join(", ") + " — fill them in if you can. You can still Confirm.";
     }
     async function speakSummary(fields) {
       playBtn.classList.remove("show");
@@ -543,34 +574,8 @@
     }
     async function openConfirmPanel(transcript) {
       hideBanner();
-      let extracted = {
-        item: "",
-        price: "",
-        location: "",
-        category: "",
-        condition: "",
-        extra_notes: ""
-      };
-      try {
-        const res = await fetch("/extract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transcript: transcript,
-            conversation_id: extractConversationId
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          extracted.item = data.item || "";
-          extracted.price = data.price === 0 || data.price ? data.price : "";
-          extracted.location = data.location || "";
-          extracted.category = data.category || "";
-          extracted.condition = data.condition || "";
-          extracted.extra_notes = data.extra_notes || "";
-          if (data.conversation_id) extractConversationId = data.conversation_id;
-        }
-      } catch (err) {}
+      const result = await loadExtractedFields(transcript);
+      const extracted = result.extracted;
       pendingExtraNotes = extracted.extra_notes || "";
       rawTranscriptEl.textContent = 'Heard: "' + transcript + '"';
       fieldItem.value = extracted.item;
@@ -580,13 +585,20 @@
       fieldCondition.value = extracted.condition;
       fieldContact.value = myPhone.value.trim();
       fieldPhoto.value = "";
+      showExtractHint(extracted);
       confirmPanel.classList.add("show");
       confirmPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (result.extractFailed) {
+        showBanner("Could not extract — Re-record or fill the form.", "error");
+      }
       speakSummary(extracted);
     }
     function closeConfirmPanel() {
       confirmPanel.classList.remove("show");
       playBtn.classList.remove("show");
+      extractHint.hidden = true;
+      extractHint.textContent = "";
+      pendingExtraNotes = "";
       if (pendingAudioUrl) { URL.revokeObjectURL(pendingAudioUrl); pendingAudioUrl = ""; }
     }
 
