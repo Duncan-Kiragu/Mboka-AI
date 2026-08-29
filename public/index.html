@@ -574,8 +574,35 @@
     }
     async function openConfirmPanel(transcript) {
       hideBanner();
-      const result = await loadExtractedFields(transcript);
-      const extracted = result.extracted;
+      extractConversationId = "";
+      let extracted = {
+        item: "",
+        price: "",
+        location: "",
+        category: "",
+        condition: "",
+        extra_notes: ""
+      };
+      try {
+        const res = await fetch("/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transcript: transcript,
+            conversation_id: extractConversationId
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          extracted.item = data.item || "";
+          extracted.price = data.price === 0 || data.price ? data.price : "";
+          extracted.location = data.location || "";
+          extracted.category = data.category || "";
+          extracted.condition = data.condition || "";
+          extracted.extra_notes = data.extra_notes || "";
+          if (data.conversation_id) extractConversationId = data.conversation_id;
+        }
+      } catch (err) {}
       pendingExtraNotes = extracted.extra_notes || "";
       rawTranscriptEl.textContent = 'Heard: "' + transcript + '"';
       fieldItem.value = extracted.item;
