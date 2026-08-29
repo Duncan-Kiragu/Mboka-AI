@@ -33,84 +33,79 @@ Already done: mic, silence stop, `/transcribe`, `/speak`, confirm / re-record, p
 
 Put a name next to each. One owner per file after the split.
 
-P1 — Split the repo + listings store
-
-Files: lib/store.ts, server.ts (wiring only)
-
-Move the in-memory array, seeds, get/create/patch into lib/store.ts.
-server.ts only mounts routes and listens — no logic.
-Add extra seed listings with source_channel: "call" and source_channel: "ussd" set, so the feed already looks multi-channel before real ones land. Done when: anyone else can import { store } from 'lib/store' without touching server.ts. Unblocks: everyone. Do this first, in the first 15 minutes.
-P2 — Live URL + Swahili voice test
-
-Files: lib/elevenlabs.ts (move STT/TTS out of server.ts, coordinate with P1 on timing)
-
-✅ Deployed to Render, ELEVENLABS_API_KEY set.
-Hit the URL every ~10 minutes so the free instance doesn't sleep.
-Record the test sentence below on an actual phone, run it through STT. If it's bad on Swahili/Sheng, say so in the room — the fallback is demoing clearer speech, not silently pressing on.
-Store audio_url (original recording) and narration_url (TTS output) on the listing object once a listing exists to attach them to. Done when: HTTPS link is in the chat; one spoken listing has round-tripped through Render. Never fully stops — keep pinging the URL through the whole event.
-P3 — Extraction API
-
-Files: lib/extract.ts only
-
-Move the keyword/regex extractor out of index.html into its own module.
-POST /extract — body { transcript } → returns { item, category, price, condition, location, extra_notes }.
-If an LLM key exists: try LLM first, fall back to regex on failure. If no LLM key by minute 15: regex only, then go help P4.
-Never throw. Missing fields come back blank, not as an error. Done when: the test sentence below returns price: 5000, location: "Kawangware", category: "furniture".
-P4 — Confirm panel talks to extract
-
-Files: public/index.html only — the record/confirm UI, not the feed (that's P5's)
-
-After STT returns, call POST /extract instead of the old inline function.
-If item, price, or location comes back missing, show one inline prompt — don't block the Confirm button on it.
-Keep the same prefill behavior and the Confirm / Re-record buttons as they exist today. Depends on: P3. Until /extract exists, leave the current inline function in place — don't break the working path while waiting. Done when: a spoken listing fills the form via the API, not the old inline keyword match.
-P5 — Buyer: tap a listing
-
-Files: public/feed.js — cut the feed out of index.html (P4 keeps the recorder half)
-
-Card tap → detail view: item, price, location, category, condition, notes, source_channel.
-Play audio_url and/or narration_url if either is present on the listing.
-Leave filters, Call, and WhatsApp links exactly as they work today — don't refactor them. Depends on: P1 (store), can start as soon as the feed is cut out of index.html. Done when: a judge can open both a seed listing and a live-posted one and see/hear the detail view.
-P6 — Call: answer the phone
-
-Files: routes/call.ts (new) Provider: Africa's Talking Voice (already decided in architecture.md — don't re-litigate Twilio vs. AT). Depends on: lib/elevenlabs.ts (P2). If it's not landed yet, inline a temporary STT call and swap the import in later.
-
-Steps:
-
-Confirm you have an AT sandbox number and can set its Voice callback URL to your Render URL. This is the clock-starter — check it immediately.
-Route A (POST /call/answer, set as the AT callback URL): respond with XML — <Say> the greeting ("Niambie unauza nini?"), then <Record> with a callbackUrl pointing to Route B. Use <Record>, not <GetDigits> — you want speech, not keypad digits.
-Route B (the callbackUrl from the <Record> action): AT POSTs the finished recording's URL here. Pass it to the STT helper, console.log the transcript.
-Every route must respond with valid <Response> XML, even the last one, or AT drops the call as malformed. At 20 minutes with no working sandbox number: stop, go help P5 or P8. Screen-record whatever partial flow you have (even just the greeting playing) as a fallback demo asset. Done when: you can dial in, hear the greeting, speak, and see a transcript land in the server logs. Nothing gets written to the store yet — that's P7. Coordinate with P7 before you both touch routes/call.ts — agree on the shape of the transcript hand-off (e.g. does Route B call P7's function directly, or write to a shared in-memory object?) before either of you starts typing.
-P7 — Call: confirm and post
-
-Files: routes/call.ts, alongside P6 (P6 owns inbound audio; P7 owns dialogue + write)
-
-Take the transcript P6 produces, call the same POST /extract used by the web path.
-If item, price, or location is missing, ask one spoken follow-up at a time (e.g. "Bei ni ngapi?") — not a list of questions.
-Once all three are present, have ElevenLabs read the summary back and ask for confirmation.
-On "yes": POST /listings with source_channel: "call".
-Optional stretch, only if time allows: "badilisha bei" to correct one field without restarting. Skip SMS entirely unless a key is already configured. Depends on: P6 (needs a working transcript hand-off first), P3 (/extract). At 90 minutes with nothing in the feed: stop, go help P2 or P5. Keep a screen recording of whatever you got working as a backup. Done when: a call you make yourself appears as a listing in the live web feed.
-P8 — USSD simulator
-
-Files: public/ussd.html only
-
-Build a fake feature-phone frame (no real telecom involved).
-Menu tree, exact copy from architecture.md:
-Karibu Jua Kali Marketplace. 1. Uza kitu 2. Tafuta fundi
-Category: 1. Vitu vya mbao 2. Nguo 3. Chakula 4. Huduma 5. Nyingine
-Price (digit entry)
-Location (preset list, or free text ≤20 chars)
-Confirm: 1. Ndio 2. Hapana
-On confirm: POST /listings with source_channel: "ussd", no audio_url, no photo_url.
-Do not wait on a live *384*# shortcode — this is explicitly simulated, and that's fine per architecture.md. Depends on: the shared POST /listings endpoint (P1) existing. Done when: one USSD-sourced card shows up in the same feed as web listings.
-P9 — Demo, merges, Render env
-
-No feature files — only touches things to unblock someone else.
-
-Own .env / Render dashboard, keys shared in chat.
-Sole merge referee on main — nobody else merges to avoid conflicts.
-Rehearse the full demo script twice, on the actual phone + projector setup you'll use on stage.
-Record a backup video of a complete web-only loop (record → confirm → feed) in case live networking fails on stage.
-Wake the Render URL ~2 minutes before going on stage. Done when: two full rehearsals are done, a backup clip exists on a phone, and everyone has the live link.
+1. **P1 — Split the repo + listings store**
+   - Files: `lib/store.ts`, `server.ts` (wiring only)
+   - Move the in-memory array, seeds, get/create/patch into `lib/store.ts`.
+   - `server.ts` only mounts routes and listens — no logic.
+   - Add extra seed listings with `source_channel: "call"` and `source_channel: "ussd"` set, so the feed already looks multi-channel before real ones land.
+   - Done when: anyone else can import `{ store }` from `lib/store` without touching `server.ts`.
+   - Unblocks: everyone. Do this first, in the first 15 minutes.
+2. **P2 — Live URL + Swahili voice test**
+   - Files: `lib/elevenlabs.ts` (move STT/TTS out of `server.ts`, coordinate with P1 on timing)
+   - ✅ Deployed to Render, `ELEVENLABS_API_KEY` set.
+   - Hit the URL every ~10 minutes so the free instance doesn't sleep.
+   - Record the test sentence below on an actual phone, run it through STT. If it's bad on Swahili/Sheng, say so in the room — the fallback is demoing clearer speech, not silently pressing on.
+   - Store `audio_url` (original recording) and `narration_url` (TTS output) on the listing object once a listing exists to attach them to.
+   - Done when: HTTPS link is in the chat; one spoken listing has round-tripped through Render. Never fully stops — keep pinging the URL through the whole event.
+3. **P3 — Extraction API**
+   - Files: `lib/extract.ts` only
+   - Move the keyword/regex extractor out of `index.html` into its own module.
+   - `POST /extract` — body `{ transcript }` → returns `{ item, category, price, condition, location, extra_notes }`.
+   - If an LLM key exists: try LLM first, fall back to regex on failure. If no LLM key by minute 15: regex only, then go help P4.
+   - Never throw. Missing fields come back blank, not as an error.
+   - Done when: the test sentence below returns `price: 5000`, `location: "Kawangware"`, `category: "furniture"`.
+4. **P4 — Confirm panel talks to extract**
+   - Files: `public/index.html` only — the record/confirm UI, not the feed (that's P5's)
+   - After STT returns, call `POST /extract` instead of the old inline function.
+   - If item, price, or location comes back missing, show one inline prompt — don't block the Confirm button on it.
+   - Keep the same prefill behavior and the Confirm / Re-record buttons as they exist today.
+   - Depends on: P3. Until `/extract` exists, leave the current inline function in place — don't break the working path while waiting.
+   - Done when: a spoken listing fills the form via the API, not the old inline keyword match.
+5. **P5 — Buyer: tap a listing**
+   - Files: `public/feed.js` — cut the feed out of `index.html` (P4 keeps the recorder half)
+   - Card tap → detail view: item, price, location, category, condition, notes, source_channel.
+   - Play `audio_url` and/or `narration_url` if either is present on the listing.
+   - Leave filters, Call, and WhatsApp links exactly as they work today — don't refactor them.
+   - Depends on: P1 (store), can start as soon as the feed is cut out of `index.html`.
+   - Done when: a judge can open both a seed listing and a live-posted one and see/hear the detail view.
+6. **P6 — Call: answer the phone**
+   - Files: `routes/call.ts` (new). Provider: Africa's Talking Voice (already decided in architecture.md — don't re-litigate Twilio vs. AT). Depends on: `lib/elevenlabs.ts` (P2). If it's not landed yet, inline a temporary STT call and swap the import in later.
+   - Steps:
+     1. Confirm you have an AT sandbox number and can set its Voice callback URL to your Render URL. This is the clock-starter — check it immediately.
+     2. Route A (`POST /call/answer`, set as the AT callback URL): respond with XML — `<Say>` the greeting ("Niambie unauza nini?"), then `<Record>` with a callbackUrl pointing to Route B. Use `<Record>`, not `<GetDigits>` — you want speech, not keypad digits.
+     3. Route B (the callbackUrl from the `<Record>` action): AT POSTs the finished recording's URL here. Pass it to the STT helper, `console.log` the transcript.
+     4. Every route must respond with valid `<Response>` XML, even the last one, or AT drops the call as malformed. At 20 minutes with no working sandbox number: stop, go help P5 or P8. Screen-record whatever partial flow you have (even just the greeting playing) as a fallback demo asset.
+   - Done when: you can dial in, hear the greeting, speak, and see a transcript land in the server logs. Nothing gets written to the store yet — that's P7. Coordinate with P7 before you both touch `routes/call.ts` — agree on the shape of the transcript hand-off (e.g. does Route B call P7's function directly, or write to a shared in-memory object?) before either of you starts typing.
+7. **P7 — Call: confirm and post**
+   - Files: `routes/call.ts`, alongside P6 (P6 owns inbound audio; P7 owns dialogue + write)
+   - Take the transcript P6 produces, call the same `POST /extract` used by the web path.
+   - If item, price, or location is missing, ask one spoken follow-up at a time (e.g. "Bei ni ngapi?") — not a list of questions.
+   - Once all three are present, have ElevenLabs read the summary back and ask for confirmation.
+   - On "yes": `POST /listings` with `source_channel: "call"`.
+   - Optional stretch, only if time allows: "badilisha bei" to correct one field without restarting. Skip SMS entirely unless a key is already configured.
+   - Depends on: P6 (needs a working transcript hand-off first), P3 (`/extract`). At 90 minutes with nothing in the feed: stop, go help P2 or P5. Keep a screen recording of whatever you got working as a backup.
+   - Done when: a call you make yourself appears as a listing in the live web feed.
+8. **P8 — USSD simulator**
+   - Files: `public/ussd.html` only
+   - Build a fake feature-phone frame (no real telecom involved).
+   - Menu tree, exact copy from architecture.md:
+     - Karibu Jua Kali Marketplace. 1. Uza kitu 2. Tafuta fundi
+     - Category: 1. Vitu vya mbao 2. Nguo 3. Chakula 4. Huduma 5. Nyingine
+     - Price (digit entry)
+     - Location (preset list, or free text ≤20 chars)
+     - Confirm: 1. Ndio 2. Hapana
+   - On confirm: `POST /listings` with `source_channel: "ussd"`, no `audio_url`, no `photo_url`.
+   - Do not wait on a live *384*# shortcode — this is explicitly simulated, and that's fine per architecture.md.
+   - Depends on: the shared `POST /listings` endpoint (P1) existing.
+   - Done when: one USSD-sourced card shows up in the same feed as web listings.
+9. **P9 — Demo, merges, Render env**
+   - No feature files — only touches things to unblock someone else.
+   - Own `.env` / Render dashboard, keys shared in chat.
+   - Sole merge referee on main — nobody else merges to avoid conflicts.
+   - Rehearse the full demo script twice, on the actual phone + projector setup you'll use on stage.
+   - Record a backup video of a complete web-only loop (record → confirm → feed) in case live networking fails on stage.
+   - Wake the Render URL ~2 minutes before going on stage.
+   - Done when: two full rehearsals are done, a backup clip exists on a phone, and everyone has the live link.
 
 If P3 has no LLM key, P3 joins P4. If P6/P7 have no number, both join P5 and P8. P2 never stops.
 
