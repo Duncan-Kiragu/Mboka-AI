@@ -12,10 +12,56 @@ export type ExtractFields = {
   extra_notes: string;
 };
 
+export type ExtractCallTrace = {
+  session: number;
+  call: number;
+  ms: number;
+  http_status: number | null;
+  invoked: boolean;
+  parsed: boolean;
+  fatal: boolean;
+  error: string;
+};
+
+export type ExtractTrace = {
+  has_key: boolean;
+  model: string;
+  transcript_chars: number;
+  llm_attempted: boolean;
+  llm_calls: number;
+  fallback_reason: string;
+  calls: ExtractCallTrace[];
+};
+
 export type ExtractResult = ExtractFields & {
   conversation_id: string;
   source: "llm" | "regex";
+  trace: ExtractTrace;
 };
+
+function emptyTrace(partial?: Partial<ExtractTrace>): ExtractTrace {
+  return {
+    has_key: false,
+    model: "",
+    transcript_chars: 0,
+    llm_attempted: false,
+    llm_calls: 0,
+    fallback_reason: "",
+    calls: [],
+    ...partial,
+  };
+}
+
+function logExtract(event: string, data: Record<string, unknown>): void {
+  console.log(
+    JSON.stringify({
+      tag: "extract",
+      event,
+      ts: new Date().toISOString(),
+      ...data,
+    })
+  );
+}
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -31,15 +77,6 @@ const CATEGORIES = [
   "services",
   "electronics",
   "other",
-] as const;
-
-const CONTRACT_KEYS = [
-  "item",
-  "category",
-  "price",
-  "condition",
-  "location",
-  "extra_notes",
 ] as const;
 
 const LOCATIONS = [
@@ -62,7 +99,7 @@ const LOCATIONS = [
 
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
   furniture: ["viti", "meza", "mbao", "kabati", "kitanda", "sofa"],
-  clothing: ["nguo", "shati", "sketi", "suruali", "kofia"],
+  clothing: ["nguo", "shati", "sketi", "suruali", "kofia", "viatu", "kiatu"],
   food: ["chakula", "mboga", "matunda", "nyama", "maziwa"],
   services: ["fundi", "umeme", "bomba", "ukarabati", "mshonaji"],
   electronics: ["simu", "radio", "laptop", "tv", "frige"],
@@ -166,10 +203,8 @@ function asCategory(value: unknown): string {
   return (CATEGORIES as readonly string[]).includes(raw) ? raw : "";
 }
 
-function looksLikeContract(raw: unknown): raw is Record<string, unknown> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
-  const obj = raw as Record<string, unknown>;
-  return CONTRACT_KEYS.every((key) => Object.prototype.hasOwnProperty.call(obj, key));
+function isPlainObject(raw: unknown): raw is Record<string, unknown> {
+  return Boolean(raw) && typeof raw === "object" && !Array.isArray(raw);
 }
 
 function coerceContract(raw: Record<string, unknown>): ExtractFields {
@@ -181,6 +216,17 @@ function coerceContract(raw: Record<string, unknown>): ExtractFields {
     location: asString(raw.location),
     extra_notes: asString(raw.extra_notes),
   };
+}
+
+function isBlankExtract(fields: ExtractFields): boolean {
+  return (
+    !fields.item &&
+    !fields.category &&
+    fields.price === "" &&
+    !fields.condition &&
+    !fields.location &&
+    !fields.extra_notes
+  );
 }
 
 function parseJsonObject(text: string): unknown {
@@ -212,8 +258,10 @@ function parseJsonObject(text: string): unknown {
 
 function parseAssistantContract(text: string): ExtractFields | null {
   const parsed = parseJsonObject(text);
-  if (!looksLikeContract(parsed)) return null;
-  return coerceContract(parsed);
+  if (!isPlainObject(parsed)) return null;
+  const fields = coerceContract(parsed);
+  if (isBlankExtract(fields)) return null;
+  return fields;
 }
 
 function anthropicKey(): string {
@@ -221,7 +269,7 @@ function anthropicKey(): string {
 }
 
 function claudeModel(): string {
-  return (process.env.CLAUDE_MODEL || "claude-sonnet-4-5").trim();
+  return (process.env.CLAUDE_MODEL || "claude-sonnet-4-5-20250929").trim();
 }
 
 function contentToText(content: unknown): string {
@@ -243,9 +291,18 @@ function contentToText(content: unknown): string {
   return parts.join("\n");
 }
 
-async function callClaude(messages: ChatTurn[]): Promise<string | null> {
+type ClaudeCall = {
+  text: string | null;
+  fatal: boolean;
+  http_status: number | null;
+  error: string;
+};
+
+async function callClaude(messages: ChatTurn[]): Promise<ClaudeCall> {
   const key = anthropicKey();
-  if (!key) return null;
+  if (!key) {
+    return { text: null, fatal: true, http_status: null, error: "missing_api_key" };
+  }
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -266,21 +323,27 @@ async function callClaude(messages: ChatTurn[]): Promise<string | null> {
 
     const raw = await res.text();
     if (!res.ok) {
-      console.error("Claude extract error", res.status, raw.slice(0, 400));
-      return null;
+      const error = raw.replace(/\s+/g, " ").slice(0, 240);
+      console.error("Claude extract error", res.status, error);
+      const fatal = res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404;
+      return { text: null, fatal, http_status: res.status, error };
     }
 
     let body: { content?: unknown };
     try {
       body = JSON.parse(raw) as { content?: unknown };
     } catch {
-      return null;
+      return { text: null, fatal: false, http_status: res.status, error: "response_not_json" };
     }
     const text = contentToText(body.content);
-    return text || null;
+    if (!text) {
+      return { text: null, fatal: false, http_status: res.status, error: "empty_assistant_text" };
+    }
+    return { text, fatal: false, http_status: res.status, error: "" };
   } catch (err) {
-    console.error("Claude extract call failed", err);
-    return null;
+    const error = err instanceof Error ? err.message : "fetch_failed";
+    console.error("Claude extract call failed", error);
+    return { text: null, fatal: false, http_status: null, error };
   }
 }
 
@@ -293,12 +356,6 @@ function repairUserMessage(attempt: number, session: number): string {
 Reply again with a single JSON object that includes ALL keys:
 item, category, price, condition, location, extra_notes.
 Use "" for anything unknown. No markdown, no commentary.`;
-}
-
-function verifyUserMessage(call: number, session: number): string {
-  return `This is verification turn ${call} of ${CALLS_PER_SESSION} in session ${session}.
-Check the JSON against the transcript using this conversation's context.
-Return the JSON contract again with all keys present. Fix any misses. No commentary.`;
 }
 
 function sessionResetMessage(session: number, transcript: string): string {
@@ -319,9 +376,21 @@ function appendUser(messages: ChatTurn[], content: string): void {
 
 async function extractWithClaude(
   transcript: string,
-  conversationId: string
+  conversationId: string,
+  trace: ExtractTrace
 ): Promise<ExtractFields | null> {
-  if (!anthropicKey()) return null;
+  if (!anthropicKey()) {
+    trace.fallback_reason = "missing_api_key";
+    logExtract("skip_llm", { conversation_id: conversationId, reason: trace.fallback_reason });
+    return null;
+  }
+
+  trace.llm_attempted = true;
+  logExtract("llm_start", {
+    conversation_id: conversationId,
+    model: trace.model,
+    transcript_chars: trace.transcript_chars,
+  });
 
   const messages = loadConversation(conversationId);
   if (messages.length === 0) {
@@ -338,33 +407,64 @@ async function extractWithClaude(
       appendUser(messages, sessionResetMessage(session, transcript));
     }
 
-    let sessionMatch: ExtractFields | null = null;
-
     for (let call = 1; call <= CALLS_PER_SESSION; call++) {
-      const reply = await callClaude(messages);
-      if (reply) {
-        messages.push({ role: "assistant", content: reply });
-        const parsed = parseAssistantContract(reply);
-        if (parsed) sessionMatch = parsed;
+      const started = Date.now();
+      const result = await callClaude(messages);
+      const ms = Date.now() - started;
+      trace.llm_calls += 1;
+
+      const parsed = result.text ? parseAssistantContract(result.text) : null;
+      const row: ExtractCallTrace = {
+        session,
+        call,
+        ms,
+        http_status: result.http_status,
+        invoked: true,
+        parsed: Boolean(parsed),
+        fatal: result.fatal,
+        error: parsed
+          ? ""
+          : result.error || (result.text ? "json_contract_mismatch" : "no_assistant_text"),
+      };
+      trace.calls.push(row);
+      logExtract("llm_call", {
+        conversation_id: conversationId,
+        ...row,
+        reply_chars: result.text ? result.text.length : 0,
+      });
+
+      if (result.fatal) {
+        trace.fallback_reason = result.error || `http_${result.http_status ?? "fatal"}`;
+        conversations.delete(conversationId);
+        logExtract("llm_fatal", {
+          conversation_id: conversationId,
+          reason: trace.fallback_reason,
+        });
+        return null;
+      }
+      if (parsed) {
+        saveConversation(conversationId, messages);
+        logExtract("llm_ok", { conversation_id: conversationId, session, call, ms });
+        return parsed;
+      }
+
+      if (result.text) {
+        messages.push({ role: "assistant", content: result.text });
       }
 
       if (call < CALLS_PER_SESSION) {
-        appendUser(
-          messages,
-          sessionMatch
-            ? verifyUserMessage(call + 1, session)
-            : repairUserMessage(call, session)
-        );
+        appendUser(messages, repairUserMessage(call, session));
       }
-    }
-
-    if (sessionMatch) {
-      saveConversation(conversationId, messages);
-      return sessionMatch;
     }
   }
 
-  saveConversation(conversationId, messages);
+  trace.fallback_reason = "no_valid_json_after_retries";
+  conversations.delete(conversationId);
+  logExtract("llm_exhausted", {
+    conversation_id: conversationId,
+    llm_calls: trace.llm_calls,
+    reason: trace.fallback_reason,
+  });
   return null;
 }
 
@@ -413,7 +513,9 @@ function extractCategory(text: string): string {
   try {
     const lower = text.toLowerCase();
     for (const [category, words] of Object.entries(CATEGORY_KEYWORDS)) {
-      if (words.some((word) => lower.includes(word))) return category;
+      if (words.some((word) => new RegExp(`\\b${word}\\b`, "i").test(lower))) {
+        return category;
+      }
     }
     return "";
   } catch {
@@ -466,7 +568,7 @@ export function extractWithRegex(transcript: string): ExtractFields {
   const location = extractLocation(text);
   return {
     item,
-    category: extractCategory(text),
+    category: extractCategory(item) || extractCategory(text),
     price: extractPrice(text),
     condition: extractCondition(text),
     location,
@@ -478,22 +580,46 @@ export async function extractFromTranscript(
   transcript: string,
   options?: { conversationId?: string }
 ): Promise<ExtractResult> {
-  try {
-    const conversation_id =
-      (options?.conversationId || "").trim() || newConversationId();
-    const text = typeof transcript === "string" ? transcript : "";
+  const conversation_id =
+    (options?.conversationId || "").trim() || newConversationId();
+  const text = typeof transcript === "string" ? transcript : "";
+  const trace = emptyTrace({
+    has_key: Boolean(anthropicKey()),
+    model: claudeModel(),
+    transcript_chars: text.length,
+  });
 
-    const llm = await extractWithClaude(text, conversation_id);
+  try {
+    logExtract("start", {
+      conversation_id,
+      has_key: trace.has_key,
+      model: trace.model,
+      transcript_chars: trace.transcript_chars,
+    });
+
+    const llm = await extractWithClaude(text, conversation_id, trace);
     if (llm) {
-      return { ...llm, conversation_id, source: "llm" };
+      logExtract("done", { conversation_id, source: "llm", llm_calls: trace.llm_calls });
+      return { ...llm, conversation_id, source: "llm", trace };
     }
-    return { ...extractWithRegex(text), conversation_id, source: "regex" };
-  } catch (err) {
-    console.error("extractFromTranscript", err);
-    return {
-      ...extractWithRegex(typeof transcript === "string" ? transcript : ""),
-      conversation_id: (options?.conversationId || "").trim() || newConversationId(),
+    if (!trace.fallback_reason) trace.fallback_reason = "llm_returned_null";
+    logExtract("done", {
+      conversation_id,
       source: "regex",
+      reason: trace.fallback_reason,
+      llm_calls: trace.llm_calls,
+    });
+    return { ...extractWithRegex(text), conversation_id, source: "regex", trace };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "extract_threw";
+    console.error("extractFromTranscript", err);
+    trace.fallback_reason = message;
+    logExtract("done", { conversation_id, source: "regex", reason: message });
+    return {
+      ...extractWithRegex(text),
+      conversation_id,
+      source: "regex",
+      trace,
     };
   }
 }
