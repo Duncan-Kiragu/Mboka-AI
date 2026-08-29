@@ -2,6 +2,8 @@
 
 Voice-first listing starter for Kenya's jua kali traders. Speak a listing, hear it read back, confirm, and it lands on a public feed.
 
+**Product spec, three channels:** see [`ARCHITECTURE.md`](ARCHITECTURE.md). 
+
 
 ## Starter Files
 
@@ -72,4 +74,4 @@ Listing JSON matches the build-spec shape (`created_at`, `source_channel`, `phot
 
 ## Out of scope
 
-Payments, in-app chat, real USSD/telephony, LLM extraction, accounts/passwords.
+See `ARCHITECTURE.md` §12. This starter still has no LLM extract, no live call, and no USSD UI — those are the 3-hour parallel tracks, not extra hosts or frameworks.
