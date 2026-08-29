@@ -26,6 +26,7 @@ export type ExtractCallTrace = {
 export type ExtractTrace = {
   has_key: boolean;
   model: string;
+  workspace_id: string;
   transcript_chars: number;
   llm_attempted: boolean;
   llm_calls: number;
@@ -43,6 +44,7 @@ function emptyTrace(partial?: Partial<ExtractTrace>): ExtractTrace {
   return {
     has_key: false,
     model: "",
+    workspace_id: "",
     transcript_chars: 0,
     llm_attempted: false,
     llm_calls: 0,
@@ -268,6 +270,13 @@ function anthropicKey(): string {
   return (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "").trim();
 }
 
+function anthropicWorkspaceId(): string {
+  return (
+    process.env.ANTHROPIC_WORKSPACE_ID?.trim() ||
+    "wrkspc_0183y5cZ6wytCQFeBNst4MnL"
+  );
+}
+
 function claudeModel(): string {
   return (process.env.CLAUDE_MODEL || "claude-sonnet-4-5-20250929").trim();
 }
@@ -311,6 +320,7 @@ async function callClaude(messages: ChatTurn[]): Promise<ClaudeCall> {
         "content-type": "application/json",
         "x-api-key": key,
         "anthropic-version": "2023-06-01",
+        "anthropic-workspace-id": anthropicWorkspaceId(),
       },
       body: JSON.stringify({
         model: claudeModel(),
@@ -386,9 +396,10 @@ async function extractWithClaude(
   }
 
   trace.llm_attempted = true;
-  logExtract("llm_start", {
+    logExtract("llm_start", {
     conversation_id: conversationId,
     model: trace.model,
+    workspace_id: anthropicWorkspaceId(),
     transcript_chars: trace.transcript_chars,
   });
 
@@ -586,6 +597,7 @@ export async function extractFromTranscript(
   const trace = emptyTrace({
     has_key: Boolean(anthropicKey()),
     model: claudeModel(),
+    workspace_id: anthropicWorkspaceId(),
     transcript_chars: text.length,
   });
 
