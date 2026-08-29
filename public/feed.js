@@ -9,6 +9,17 @@
 
   var FILTERS = ["all", "furniture", "clothing", "food", "services", "electronics", "other"];
   var CHANNEL_LABEL = { web: "Web", call: "Phone call", ussd: "USSD" };
+  var CHANNEL_SW = { web: "Sauti", call: "Simu", ussd: "USSD" };
+  var CHANNEL_EN = { web: "Spoken", call: "Called in", ussd: "Basic phone" };
+  var CAT_SW = {
+    all: "Zote",
+    furniture: "Mbao",
+    clothing: "Nguo",
+    food: "Chakula",
+    services: "Huduma",
+    electronics: "Elektroni",
+    other: "Nyingine"
+  };
   var PHONE_KEY = "mboka-phone";
   var POLL_MS = 12000;
 
@@ -66,6 +77,21 @@
   }
   function channelLabel(channel) {
     return CHANNEL_LABEL[channel] || channel || "Unknown";
+  }
+  function originMark(channel) {
+    var wrap = document.createElement("span");
+    var key = CHANNEL_SW[channel] ? channel : "web";
+    wrap.className = "origin origin-" + key;
+    wrap.title = CHANNEL_EN[key] || channelLabel(channel);
+    var sw = document.createElement("span");
+    sw.className = "sw";
+    sw.textContent = CHANNEL_SW[key] || channelLabel(channel);
+    var en = document.createElement("span");
+    en.className = "en";
+    en.textContent = CHANNEL_EN[key] || channelLabel(channel);
+    wrap.appendChild(sw);
+    wrap.appendChild(en);
+    return wrap;
   }
   function timeAgo(iso) {
     if (!iso) return "";
@@ -195,7 +221,7 @@
     FILTERS.forEach(function (name) {
       var btn = document.createElement("button");
       btn.type = "button";
-      btn.textContent = name === "all" ? "All" : name;
+      btn.textContent = (CAT_SW[name] || name) + (name === "all" ? "" : " · " + name);
       if (name === activeFilter) btn.className = "active";
       btn.addEventListener("click", function () {
         activeFilter = name;
@@ -220,7 +246,7 @@
     locationFilter.innerHTML = "";
     var allOpt = document.createElement("option");
     allOpt.value = "all";
-    allOpt.textContent = "All areas";
+    allOpt.textContent = "Eneo lote · All areas";
     locationFilter.appendChild(allOpt);
     names.forEach(function (name) {
       var opt = document.createElement("option");
@@ -266,9 +292,10 @@
     return contacts;
   }
 
-  function renderCard(listing) {
+  function renderCard(listing, index) {
+    var weight = index === 0 ? "is-lead" : index < 3 ? "is-mid" : "is-rest";
     var card = document.createElement("article");
-    card.className = (isBuyer ? "listing-row" : "card") + (listing.status === "sold" ? " sold" : "");
+    card.className = (isBuyer ? "listing-row " + weight : "card") + (listing.status === "sold" ? " sold" : "");
     card.tabIndex = 0;
     card.setAttribute("role", "link");
     card.setAttribute("aria-label", (listing.item || "Listing") + ". Open listing");
@@ -277,6 +304,7 @@
       card.appendChild(thumbEl(listing));
       var copy = document.createElement("div");
       copy.className = "copy";
+      copy.appendChild(originMark(listing.source_channel));
       var price = document.createElement("p");
       price.className = "price";
       price.textContent = formatPrice(listing.price);
@@ -296,6 +324,7 @@
       copy.appendChild(item);
       copy.appendChild(meta);
       card.appendChild(copy);
+      addContactRow(card, listing, true);
     } else {
       if (listing.photo_url) {
         var img = document.createElement("img");
@@ -303,6 +332,7 @@
         img.alt = "";
         card.appendChild(img);
       }
+      card.appendChild(originMark(listing.source_channel));
       var itemEl = document.createElement("div");
       itemEl.className = "item";
       itemEl.textContent = listing.item || "Untitled";
@@ -330,9 +360,6 @@
         soldEl.textContent = "sold";
         metaEl.appendChild(soldEl);
       }
-      var ch = document.createElement("span");
-      ch.textContent = channelLabel(listing.source_channel);
-      metaEl.appendChild(ch);
       card.appendChild(metaEl);
       addContactRow(card, listing, true);
     }
@@ -371,8 +398,8 @@
       feedEl.appendChild(empty);
       return;
     }
-    rows.forEach(function (listing) {
-      feedEl.appendChild(renderCard(listing));
+    rows.forEach(function (listing, index) {
+      feedEl.appendChild(renderCard(listing, index));
     });
   }
 
@@ -381,7 +408,7 @@
     openListing = null;
     if (feedView) feedView.hidden = false;
     if (detailView) detailView.hidden = true;
-    document.title = "Mboka — Marketplace";
+    document.title = "Mboka — Soko";
   }
 
   function showDetailView() {
@@ -423,11 +450,76 @@
     detailPage.appendChild(sk);
   }
 
+  function paintWave(canvas, buffer) {
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    var w = canvas.width;
+    var h = canvas.height;
+    ctx.fillStyle = "#1a1008";
+    ctx.fillRect(0, 0, w, h);
+    var data = buffer.getChannelData(0);
+    var step = Math.max(1, Math.floor(data.length / w));
+    ctx.strokeStyle = "#e24a16";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (var x = 0; x < w; x++) {
+      var min = 1;
+      var max = -1;
+      var start = x * step;
+      for (var i = 0; i < step && start + i < data.length; i++) {
+        var v = data[start + i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      var y1 = (1 - max) * 0.5 * h;
+      var y2 = (1 - min) * 0.5 * h;
+      ctx.moveTo(x, y1);
+      ctx.lineTo(x, y2);
+    }
+    ctx.stroke();
+  }
+
+  function attachWaveform(parent, audioEl) {
+    var wrap = document.createElement("div");
+    wrap.className = "wave-wrap";
+    var canvas = document.createElement("canvas");
+    canvas.width = 640;
+    canvas.height = 72;
+    canvas.setAttribute("aria-hidden", "true");
+    var play = document.createElement("button");
+    play.type = "button";
+    play.className = "wave-play";
+    play.textContent = "Sikiliza";
+    play.addEventListener("click", function () {
+      if (audioEl.paused) {
+        audioEl.play().catch(function () {});
+        play.textContent = "Simama";
+      } else {
+        audioEl.pause();
+        play.textContent = "Sikiliza";
+      }
+    });
+    audioEl.addEventListener("ended", function () { play.textContent = "Sikiliza"; });
+    wrap.appendChild(canvas);
+    wrap.appendChild(play);
+    parent.appendChild(wrap);
+    var src = audioEl.src;
+    if (!src) return;
+    fetch(src)
+      .then(function (res) { return res.arrayBuffer(); })
+      .then(function (ab) {
+        var ac = new (window.AudioContext || window.webkitAudioContext)();
+        return ac.decodeAudioData(ab);
+      })
+      .then(function (buffer) { paintWave(canvas, buffer); })
+      .catch(function () {});
+  }
+
   function addAudioBlock(parent, listing) {
     var box = document.createElement("div");
     box.className = "listen";
     var h = document.createElement("h2");
-    h.textContent = "Listen";
+    h.innerHTML = '<span class="sw">Sauti ya muuzaji</span><span class="en">Listen</span>';
     box.appendChild(h);
     if (hasMedia(listing.audio_url)) {
       var audio = document.createElement("audio");
@@ -435,6 +527,7 @@
       audio.preload = "metadata";
       audio.src = listing.audio_url;
       bindAudio(audio);
+      attachWaveform(box, audio);
       box.appendChild(audio);
     }
     if (hasMedia(listing.narration_url)) {
@@ -493,7 +586,7 @@
     nav.className = "listing-nav";
     var back = document.createElement("button");
     back.type = "button";
-    back.textContent = "← Back";
+    back.textContent = "← Soko";
     back.addEventListener("click", closeDetail);
     var share = document.createElement("button");
     share.type = "button";
@@ -540,6 +633,7 @@
     ].join(" · ");
     body.appendChild(price);
     body.appendChild(title);
+    body.appendChild(originMark(listing.source_channel));
     body.appendChild(meta);
 
     var chips = document.createElement("div");
