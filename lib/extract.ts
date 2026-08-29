@@ -33,15 +33,6 @@ const CATEGORIES = [
   "other",
 ] as const;
 
-const CONTRACT_KEYS = [
-  "item",
-  "category",
-  "price",
-  "condition",
-  "location",
-  "extra_notes",
-] as const;
-
 const LOCATIONS = [
   "Kawangware",
   "Kayole",
@@ -62,7 +53,7 @@ const LOCATIONS = [
 
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
   furniture: ["viti", "meza", "mbao", "kabati", "kitanda", "sofa"],
-  clothing: ["nguo", "shati", "sketi", "suruali", "kofia"],
+  clothing: ["nguo", "shati", "sketi", "suruali", "kofia", "viatu", "kiatu"],
   food: ["chakula", "mboga", "matunda", "nyama", "maziwa"],
   services: ["fundi", "umeme", "bomba", "ukarabati", "mshonaji"],
   electronics: ["simu", "radio", "laptop", "tv", "frige"],
@@ -166,10 +157,8 @@ function asCategory(value: unknown): string {
   return (CATEGORIES as readonly string[]).includes(raw) ? raw : "";
 }
 
-function looksLikeContract(raw: unknown): raw is Record<string, unknown> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
-  const obj = raw as Record<string, unknown>;
-  return CONTRACT_KEYS.every((key) => Object.prototype.hasOwnProperty.call(obj, key));
+function isPlainObject(raw: unknown): raw is Record<string, unknown> {
+  return Boolean(raw) && typeof raw === "object" && !Array.isArray(raw);
 }
 
 function coerceContract(raw: Record<string, unknown>): ExtractFields {
@@ -181,6 +170,17 @@ function coerceContract(raw: Record<string, unknown>): ExtractFields {
     location: asString(raw.location),
     extra_notes: asString(raw.extra_notes),
   };
+}
+
+function isBlankExtract(fields: ExtractFields): boolean {
+  return (
+    !fields.item &&
+    !fields.category &&
+    fields.price === "" &&
+    !fields.condition &&
+    !fields.location &&
+    !fields.extra_notes
+  );
 }
 
 function parseJsonObject(text: string): unknown {
@@ -212,8 +212,10 @@ function parseJsonObject(text: string): unknown {
 
 function parseAssistantContract(text: string): ExtractFields | null {
   const parsed = parseJsonObject(text);
-  if (!looksLikeContract(parsed)) return null;
-  return coerceContract(parsed);
+  if (!isPlainObject(parsed)) return null;
+  const fields = coerceContract(parsed);
+  if (isBlankExtract(fields)) return null;
+  return fields;
 }
 
 function anthropicKey(): string {
@@ -221,7 +223,7 @@ function anthropicKey(): string {
 }
 
 function claudeModel(): string {
-  return (process.env.CLAUDE_MODEL || "claude-sonnet-4-5").trim();
+  return (process.env.CLAUDE_MODEL || "claude-sonnet-4-5-20250929").trim();
 }
 
 function contentToText(content: unknown): string {
@@ -243,9 +245,11 @@ function contentToText(content: unknown): string {
   return parts.join("\n");
 }
 
-async function callClaude(messages: ChatTurn[]): Promise<string | null> {
+type ClaudeCall = { text: string | null; fatal: boolean };
+
+async function callClaude(messages: ChatTurn[]): Promise<ClaudeCall> {
   const key = anthropicKey();
-  if (!key) return null;
+  if (!key) return { text: null, fatal: true };
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -267,20 +271,21 @@ async function callClaude(messages: ChatTurn[]): Promise<string | null> {
     const raw = await res.text();
     if (!res.ok) {
       console.error("Claude extract error", res.status, raw.slice(0, 400));
-      return null;
+      const fatal = res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404;
+      return { text: null, fatal };
     }
 
     let body: { content?: unknown };
     try {
       body = JSON.parse(raw) as { content?: unknown };
     } catch {
-      return null;
+      return { text: null, fatal: false };
     }
     const text = contentToText(body.content);
-    return text || null;
+    return { text: text || null, fatal: false };
   } catch (err) {
     console.error("Claude extract call failed", err);
-    return null;
+    return { text: null, fatal: false };
   }
 }
 
@@ -293,12 +298,6 @@ function repairUserMessage(attempt: number, session: number): string {
 Reply again with a single JSON object that includes ALL keys:
 item, category, price, condition, location, extra_notes.
 Use "" for anything unknown. No markdown, no commentary.`;
-}
-
-function verifyUserMessage(call: number, session: number): string {
-  return `This is verification turn ${call} of ${CALLS_PER_SESSION} in session ${session}.
-Check the JSON against the transcript using this conversation's context.
-Return the JSON contract again with all keys present. Fix any misses. No commentary.`;
 }
 
 function sessionResetMessage(session: number, transcript: string): string {
@@ -338,33 +337,28 @@ async function extractWithClaude(
       appendUser(messages, sessionResetMessage(session, transcript));
     }
 
-    let sessionMatch: ExtractFields | null = null;
-
     for (let call = 1; call <= CALLS_PER_SESSION; call++) {
-      const reply = await callClaude(messages);
+      const { text: reply, fatal } = await callClaude(messages);
+      if (fatal) {
+        conversations.delete(conversationId);
+        return null;
+      }
       if (reply) {
         messages.push({ role: "assistant", content: reply });
         const parsed = parseAssistantContract(reply);
-        if (parsed) sessionMatch = parsed;
+        if (parsed) {
+          saveConversation(conversationId, messages);
+          return parsed;
+        }
       }
 
       if (call < CALLS_PER_SESSION) {
-        appendUser(
-          messages,
-          sessionMatch
-            ? verifyUserMessage(call + 1, session)
-            : repairUserMessage(call, session)
-        );
+        appendUser(messages, repairUserMessage(call, session));
       }
-    }
-
-    if (sessionMatch) {
-      saveConversation(conversationId, messages);
-      return sessionMatch;
     }
   }
 
-  saveConversation(conversationId, messages);
+  conversations.delete(conversationId);
   return null;
 }
 
@@ -413,7 +407,9 @@ function extractCategory(text: string): string {
   try {
     const lower = text.toLowerCase();
     for (const [category, words] of Object.entries(CATEGORY_KEYWORDS)) {
-      if (words.some((word) => lower.includes(word))) return category;
+      if (words.some((word) => new RegExp(`\\b${word}\\b`, "i").test(lower))) {
+        return category;
+      }
     }
     return "";
   } catch {
@@ -466,7 +462,7 @@ export function extractWithRegex(transcript: string): ExtractFields {
   const location = extractLocation(text);
   return {
     item,
-    category: extractCategory(text),
+    category: extractCategory(item) || extractCategory(text),
     price: extractPrice(text),
     condition: extractCondition(text),
     location,
