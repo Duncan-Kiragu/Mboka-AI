@@ -3,215 +3,145 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a1008" />
   <title>Mboka AI</title>
-  <style>
-    :root {
-      --bg: #f4efe6;
-      --ink: #1c1914;
-      --muted: #5c564c;
-      --green: #1f6b3a;
-      --green-dark: #164a28;
-      --terracotta: #c45c26;
-      --card: #fffdf8;
-      --line: #e4d9c8;
-      --err: #9b1c1c;
-      --ok: #1f6b3a;
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
-    body {
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: var(--ink);
-      min-height: 100vh;
-    }
-    .wrap { max-width: 440px; margin: 0 auto; padding: 20px 16px 48px; }
-    header h1 { margin: 0; font-size: 1.7rem; letter-spacing: -0.03em; }
-    header p { margin: 6px 0 0; color: var(--muted); font-size: 0.95rem; }
-
-    .phone-bar {
-      display: flex;
-      gap: 8px;
-      margin-top: 14px;
-    }
-    .phone-bar input {
-      flex: 1;
-      padding: 10px 12px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      font: inherit;
-      background: #fff;
-    }
-
-    .recorder {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      padding: 28px 16px 22px;
-      margin-top: 16px;
-      text-align: center;
-    }
-    #micBtn {
-      width: 128px; height: 128px; border: 0; border-radius: 50%;
-      background: var(--green); color: #fff; font-size: 3rem; cursor: pointer;
-      box-shadow: 0 10px 24px rgba(31, 107, 58, 0.28);
-    }
-    #micBtn:active { transform: scale(0.97); }
-    #micBtn.recording {
-      background: var(--terracotta);
-      animation: pulse 1.2s ease-in-out infinite;
-    }
-    #micBtn:disabled { opacity: 0.6; cursor: wait; }
-    @keyframes pulse {
-      0%, 100% { box-shadow: 0 0 0 8px rgba(196, 92, 38, 0.16); }
-      50% { box-shadow: 0 0 0 16px rgba(196, 92, 38, 0.08); }
-    }
-    .mic-hint { margin: 14px 0 0; color: var(--muted); font-size: 0.9rem; }
-
-    .banner { display: none; margin-top: 14px; padding: 10px 12px; border-radius: 10px; font-size: 0.9rem; text-align: left; }
-    .banner.show { display: block; }
-    .banner.error { background: #fde8e8; color: var(--err); }
-    .banner.info { background: #eef6ee; color: var(--ok); }
-
-    #confirmPanel {
-      display: none; background: var(--card); border: 1px solid var(--line);
-      border-radius: 20px; padding: 18px 16px; margin-top: 16px;
-    }
-    #confirmPanel.show { display: block; }
-    #confirmPanel h2 { margin: 0 0 12px; font-size: 1.05rem; }
-    .field { margin-bottom: 10px; text-align: left; }
-    .field label {
-      display: block; font-size: 0.75rem; font-weight: 700;
-      letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
-    }
-    .field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff; }
-    .transcript { font-size: 0.85rem; color: var(--muted); background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
-    .extract-hint {
-      margin: -4px 0 12px; padding: 10px 12px;
-      border-radius: 10px; border-left: 4px solid var(--terracotta);
-      background: #fdf4ee; color: var(--ink); font-size: 0.85rem; text-align: left;
-    }
-    .row-btns { display: flex; gap: 8px; margin-top: 14px; }
-    .row-btns button {
-      flex: 1; border: 0; border-radius: 12px; padding: 12px;
-      font: inherit; font-weight: 700; cursor: pointer;
-    }
-    #confirmBtn { background: var(--green); color: #fff; }
-    #rerecordBtn { background: var(--line); color: var(--ink); }
-    #playBtn {
-      display: none; width: 100%; margin-top: 8px; border: 1px dashed var(--green);
-      background: transparent; color: var(--green-dark); border-radius: 12px;
-      padding: 10px; font: inherit; font-weight: 700; cursor: pointer;
-    }
-    #playBtn.show { display: block; }
-
-    .feed-head { display: flex; align-items: baseline; justify-content: space-between; margin: 28px 4px 10px; }
-    .feed-head h2 { margin: 0; font-size: 1.15rem; }
-    .feed-tabs { display: flex; gap: 6px; }
-    .feed-tabs button {
-      border: 1px solid var(--line); background: var(--card); border-radius: 999px;
-      padding: 6px 12px; font: inherit; font-size: 0.82rem; cursor: pointer;
-    }
-    .feed-tabs button.active { background: var(--green); border-color: var(--green); color: #fff; }
-    .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-    .filters button {
-      border: 1px solid var(--line); background: var(--card); color: var(--ink);
-      border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 0.82rem; cursor: pointer;
-    }
-    .filters button.active { background: var(--green); border-color: var(--green); color: #fff; }
-    #locationFilter {
-      width: 100%; margin-bottom: 12px; padding: 8px 10px;
-      border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff;
-    }
-
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 10px; cursor: pointer; }
-    .market-link {
-      display: inline-block;
-      margin-top: 4px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: var(--green-dark);
-      text-decoration: none;
-    }
-    .card.sold { opacity: 0.62; }
-    .card img { width: 100%; border-radius: 10px; margin-bottom: 8px; max-height: 180px; object-fit: cover; }
-    .card .item { font-weight: 700; font-size: 1.02rem; margin-bottom: 6px; }
-    .card .meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 0.88rem; }
-    .pill { background: #eef6ee; color: var(--green-dark); border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; text-transform: capitalize; }
-    .contacts { display: flex; gap: 8px; margin-top: 10px; }
-    .contacts a, .contacts button {
-      flex: 1; text-align: center; text-decoration: none; color: var(--green-dark);
-      border: 1px solid var(--line); background: #fff; border-radius: 10px;
-      padding: 8px; font: inherit; font-size: 0.82rem; font-weight: 700; cursor: pointer;
-    }
-    .empty { color: var(--muted); text-align: center; padding: 20px 8px; }
-  </style>
+  <link rel="stylesheet" href="/mboka.css" />
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <h1>Mboka AI</h1>
-      <p>Sema listing yako — tutasikiliza, tutasoma tena, kisha tuchapishe.</p>
+  <a class="skip" href="#micBtn">Nenda kwenye rekodi</a>
+  <div class="stage">
+    <canvas id="field" aria-hidden="true"></canvas>
+
+    <header class="topbar">
+      <a class="brand" href="/">
+        <span class="sw">Mboka</span>
+        <span class="en">Voice becomes a shop</span>
+      </a>
+      <nav class="top-nav" aria-label="Primary">
+        <a href="/" aria-current="page"><span class="sw">Uza</span><span class="en">Sell</span></a>
+        <a href="/feed.html"><span class="sw">Soko</span><span class="en">Market</span></a>
+        <a href="/ussd.html"><span class="sw">*384#</span><span class="en">Any phone</span></a>
+      </nav>
     </header>
 
-    <div class="phone-bar">
-      <input id="myPhone" type="tel" inputmode="tel" placeholder="Your phone (for Call / WhatsApp)" autocomplete="tel" />
+    <div class="hem" aria-hidden="true">
+      <span class="hem-rule"></span>
+      <p>Sauti yako ndiyo duka lako</p>
+      <span class="hem-rule"></span>
     </div>
 
-    <section class="recorder">
-      <button id="micBtn" type="button" aria-label="Record listing">🎤</button>
-      <p class="mic-hint" id="micHint">Tap to record · tap again to stop</p>
-      <div id="statusBanner" class="banner" role="status"></div>
+    <section class="hero" id="hero">
+      <div class="hero-copy">
+        <h1 class="display offset" data-text="Sauti yako ndiyo duka.">Sauti yako ndiyo duka.</h1>
+        <p class="hero-sub">
+          <span class="sw">Sema unachouza. Hatuna fomu.</span>
+          <span class="en">Tap once. Speak. We print the listing.</span>
+        </p>
+      </div>
+      <div class="rec-time" id="recTime" hidden>0:00</div>
+      <div class="mic-wrap">
+        <button id="micBtn" type="button" aria-label="Sema listing yako">
+          <span class="mic-orb" aria-hidden="true"></span>
+          <span class="mic-word">Sema</span>
+        </button>
+      </div>
+      <div class="hero-meta">
+        <p class="mic-hint" id="micHint">
+          <span class="sw">Gusa, kisha sema</span>
+          <span class="en">Tap to record · tap again to stop</span>
+        </p>
+      </div>
     </section>
 
-    <section id="confirmPanel">
-      <h2>Confirm listing</h2>
+    <div id="statusBanner" class="banner" role="status"></div>
+
+    <section id="confirmPanel" hidden>
+      <div class="ledger-head">
+        <h2>
+          <span class="sw">Risiti ya soko</span>
+          <span class="en">Confirm listing</span>
+        </h2>
+      </div>
       <div class="transcript" id="rawTranscript"></div>
       <p id="extractHint" class="extract-hint" hidden></p>
-      <div class="field"><label for="fieldItem">Item</label><input id="fieldItem" type="text" /></div>
-      <div class="field"><label for="fieldPrice">Price (KSh)</label><input id="fieldPrice" type="text" inputmode="numeric" /></div>
-      <div class="field"><label for="fieldLocation">Location</label><input id="fieldLocation" type="text" /></div>
       <div class="field">
-        <label for="fieldCategory">Category</label>
+        <label for="fieldItem">Kitu · Item</label>
+        <input id="fieldItem" type="text" />
+      </div>
+      <div class="field field-price">
+        <label for="fieldPrice">Bei · Price (KSh)</label>
+        <input id="fieldPrice" type="text" inputmode="numeric" />
+      </div>
+      <div class="field">
+        <label for="fieldLocation">Eneo · Location</label>
+        <input id="fieldLocation" type="text" />
+      </div>
+      <div class="field">
+        <label for="fieldCategory">Aina · Category</label>
         <select id="fieldCategory">
-          <option value="furniture">furniture</option>
-          <option value="clothing">clothing</option>
-          <option value="food">food</option>
-          <option value="services">services</option>
-          <option value="electronics">electronics</option>
-          <option value="other">other</option>
+          <option value="furniture">Vitu vya mbao · furniture</option>
+          <option value="clothing">Nguo · clothing</option>
+          <option value="food">Chakula · food</option>
+          <option value="services">Huduma · services</option>
+          <option value="electronics">Elektroni · electronics</option>
+          <option value="other">Nyingine · other</option>
         </select>
       </div>
-      <div class="field"><label for="fieldCondition">Condition</label><input id="fieldCondition" type="text" placeholder="new / used (optional)" /></div>
-      <div class="field"><label for="fieldContact">Contact phone</label><input id="fieldContact" type="tel" inputmode="tel" /></div>
-      <div class="field"><label for="fieldPhoto">Photo (optional, 1)</label><input id="fieldPhoto" type="file" accept="image/*" /></div>
-      <div class="row-btns">
-        <button id="rerecordBtn" type="button">Re-record</button>
-        <button id="confirmBtn" type="button">Confirm</button>
+      <div class="field">
+        <label for="fieldCondition">Hali · Condition</label>
+        <input id="fieldCondition" type="text" placeholder="mpya / used" />
       </div>
-      <button id="playBtn" type="button">Tap to play confirmation</button>
+      <div class="field">
+        <label for="fieldContact">Simu · Contact</label>
+        <input id="fieldContact" type="tel" inputmode="tel" />
+      </div>
+      <div class="field">
+        <label for="fieldPhoto">Picha (si lazima) · Photo</label>
+        <input id="fieldPhoto" type="file" accept="image/*" />
+      </div>
+      <p class="caption" id="caption" aria-live="polite"></p>
+      <div class="row-btns">
+        <button id="rerecordBtn" type="button">
+          <span class="sw">Sema tena</span>
+          <span class="en">Re-record</span>
+        </button>
+        <button id="confirmBtn" type="button">
+          <span class="sw">Chapisha</span>
+          <span class="en">Confirm</span>
+        </button>
+      </div>
+      <button id="playBtn" type="button">Gusa usikie uthibitisho · Tap to play confirmation</button>
     </section>
 
-    <!-- Buyer feed markup. Full page is /feed.html (P5). -->
-    <div class="feed-head">
-      <div>
-        <h2>Live feed</h2>
-        <a class="market-link" href="/feed.html">Open marketplace</a>
+    <div class="soko-strip">
+      <div class="feed-head">
+        <div>
+          <h2>
+            <span class="sw">Soko hai</span>
+            <span class="en">Live feed</span>
+          </h2>
+          <a class="market-link" href="/feed.html">Fungua soko · Open marketplace</a>
+        </div>
+        <div class="feed-tabs">
+          <button type="button" id="tabAll" class="active">Zote · All</button>
+          <button type="button" id="tabMine">Zangu · Mine</button>
+        </div>
       </div>
-      <div class="feed-tabs">
-        <button type="button" id="tabAll" class="active">All</button>
-        <button type="button" id="tabMine">Mine</button>
+      <div class="phone-bar">
+        <input id="myPhone" type="tel" inputmode="tel" placeholder="Simu yako · Your phone (Call / WhatsApp / Mine)" autocomplete="tel" />
       </div>
+      <div class="filters" id="filters"></div>
+      <select id="locationFilter" aria-label="Filter by location"></select>
+      <div id="feed"></div>
+      <p class="sponsors">Cursor · ElevenLabs · Render</p>
     </div>
-    <div class="filters" id="filters"></div>
-    <select id="locationFilter" aria-label="Filter by location"></select>
-    <div id="feed"></div>
   </div>
 
   <script>
     /*
       Confirm-panel fields come from POST /extract.
       On failure the form still opens; fill manually or Re-record.
+      API bodies are unchanged.
     */
     const PHONE_KEY = "mboka-phone";
     const SILENCE_MS = 2000;
@@ -220,6 +150,7 @@
     const CALL_GREETING = "Niambie unauza nini?";
 
     const micBtn = document.getElementById("micBtn");
+    const micWord = micBtn.querySelector(".mic-word");
     const micHint = document.getElementById("micHint");
     const statusBanner = document.getElementById("statusBanner");
     const confirmPanel = document.getElementById("confirmPanel");
@@ -236,6 +167,9 @@
     const rerecordBtn = document.getElementById("rerecordBtn");
     const playBtn = document.getElementById("playBtn");
     const myPhone = document.getElementById("myPhone");
+    const hero = document.getElementById("hero");
+    const recTime = document.getElementById("recTime");
+    const caption = document.getElementById("caption");
 
     let mediaRecorder = null;
     let mediaStream = null;
@@ -250,11 +184,29 @@
     let pendingAudioUrl = "";
     let pendingExtraNotes = "";
     let extractConversationId = "";
+    let clockTimer = 0;
+    let captionAudio = null;
 
     myPhone.value = localStorage.getItem(PHONE_KEY) || "";
     myPhone.addEventListener("change", function () {
       localStorage.setItem(PHONE_KEY, myPhone.value.trim());
     });
+
+    function fieldApi() {
+      return window.MbokaField || null;
+    }
+    function setFieldMode(next) {
+      var api = fieldApi();
+      if (api && api.setMode) api.setMode(next);
+    }
+    function reducedMotion() {
+      return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    }
+
+    function setHint(sw, en) {
+      micHint.innerHTML =
+        '<span class="sw">' + sw + '</span><span class="en">' + (en || "") + "</span>";
+    }
 
     function showBanner(message, type) {
       statusBanner.textContent = message;
@@ -345,17 +297,29 @@
       }
       if (recording) rafId = requestAnimationFrame(watchSilence);
     }
+
+    function tickClock() {
+      if (!recording) return;
+      const s = Math.floor((Date.now() - startedAt) / 1000);
+      const mm = String(Math.floor(s / 60)).padStart(2, "0");
+      const ss = String(s % 60).padStart(2, "0");
+      recTime.textContent = mm + ":" + ss;
+    }
+
     function cleanupStream() {
       if (rafId) cancelAnimationFrame(rafId);
       rafId = 0;
       if (silenceTimer) clearTimeout(silenceTimer);
       silenceTimer = null;
+      if (clockTimer) { clearInterval(clockTimer); clockTimer = 0; }
       if (mediaStream) {
         mediaStream.getTracks().forEach(function (t) { t.stop(); });
         mediaStream = null;
       }
       if (audioContext) { audioContext.close().catch(function () {}); audioContext = null; }
       analyser = null;
+      var api = fieldApi();
+      if (api && api.setAnalyser) api.setAnalyser(null);
       mediaRecorder = null;
       recording = false;
     }
@@ -388,12 +352,14 @@
 
     async function startRecording() {
       hideBanner();
+      setFieldMode("listen");
       micBtn.disabled = true;
-      micHint.textContent = CALL_GREETING;
+      setHint("Niambie unauza nini?", "Opening the mic…");
       await playGreeting(CALL_GREETING);
       micBtn.disabled = false;
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         showBanner("This browser cannot record audio. Try Chrome on a phone or laptop.", "error");
+        setFieldMode("idle");
         return;
       }
       try {
@@ -408,6 +374,7 @@
             : "Could not open the microphone. Check that no other app is using it.",
           "error"
         );
+        setFieldMode("idle");
         return;
       }
       chunks = [];
@@ -417,6 +384,7 @@
       } catch (err) {
         cleanupStream();
         showBanner("Could not start the recorder in this browser.", "error");
+        setFieldMode("idle");
         return;
       }
       mediaRecorder.ondataavailable = function (e) {
@@ -434,18 +402,25 @@
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
         source.connect(analyser);
+        var api = fieldApi();
+        if (api && api.setAnalyser) api.setAnalyser(analyser);
       } catch (e) { analyser = null; }
       mediaRecorder.start(200);
       recording = true;
       startedAt = Date.now();
       micBtn.classList.add("recording");
-      micHint.textContent = "Listening… tap to stop, or pause ~2s";
+      if (micWord) micWord.textContent = "Simama";
+      recTime.hidden = false;
+      tickClock();
+      clockTimer = setInterval(tickClock, 250);
+      setHint("Tunasikiliza…", "Listening… tap to stop, or pause ~2s");
       if (analyser) rafId = requestAnimationFrame(watchSilence);
     }
     function stopRecording() {
       if (!recording || !mediaRecorder) return;
       recording = false;
       micBtn.classList.remove("recording");
+      recTime.hidden = true;
       try {
         if (mediaRecorder.state !== "inactive") mediaRecorder.stop();
       } catch (e) {
@@ -457,10 +432,11 @@
     async function sendForTranscription(blob) {
       transcribing = true;
       micBtn.disabled = true;
-      micHint.textContent = "Transcribing…";
+      setHint("Tunatafsiri sauti…", "Transcribing…");
       try {
         if (!blob.size) {
           showBanner("Recording was empty. Tap the mic and speak, then stop.", "error");
+          setFieldMode("idle");
           return;
         }
         const audio = await blobToBase64(blob);
@@ -476,22 +452,27 @@
         const data = await res.json().catch(function () { return {}; });
         if (!res.ok) {
           showBanner(data.error || "Transcription failed. Try again.", "error");
+          setFieldMode("idle");
           return;
         }
         const transcript = (data.transcript || "").trim();
         if (!transcript) {
           showBanner("Heard nothing we could transcribe. Try speaking a bit louder and retry.", "error");
+          setFieldMode("idle");
           return;
         }
         showBanner('Call recorded: "' + transcript + '"', "info");
         await openConfirmPanel(transcript);
       } catch (err) {
         showBanner("Transcription failed. Check your connection and retry.", "error");
+        setFieldMode("idle");
       } finally {
         transcribing = false;
         micBtn.disabled = false;
-        micHint.textContent = "Tap to record · tap again to stop";
+        setHint("Gusa, kisha sema", "Tap to record · tap again to stop");
         micBtn.classList.remove("recording");
+        if (micWord) micWord.textContent = "Sema";
+        recTime.hidden = true;
       }
     }
 
@@ -506,34 +487,6 @@
         extra_notes: pendingExtraNotes
       };
     }
-    function blankExtracted() {
-      return { item: "", category: "other", price: "", condition: "", location: "", extra_notes: "" };
-    }
-    function normalizeExtracted(data) {
-      const price = data && data.price != null && data.price !== "" ? String(data.price) : "";
-      return {
-        item: (data && data.item) || "",
-        category: (data && data.category) || "other",
-        price: price,
-        condition: (data && data.condition) || "",
-        location: (data && data.location) || "",
-        extra_notes: (data && data.extra_notes) || ""
-      };
-    }
-    async function loadExtractedFields(transcript) {
-      try {
-        const res = await fetch("/extract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: transcript })
-        });
-        if (!res.ok) return { extracted: blankExtracted(), extractFailed: true };
-        const data = await res.json();
-        return { extracted: normalizeExtracted(data), extractFailed: false };
-      } catch (e) {
-        return { extracted: blankExtracted(), extractFailed: true };
-      }
-    }
     function showExtractHint(fields) {
       const missing = [];
       if (!(fields.item || "").trim()) missing.push("item");
@@ -547,14 +500,37 @@
       extractHint.hidden = false;
       extractHint.textContent = "Missing " + missing.join(", ") + " — fill them in if you can. You can still Confirm.";
     }
+
+    function trackCaption(text, audio) {
+      if (!caption) return;
+      const words = String(text || "").split(/\s+/).filter(Boolean);
+      function paint() {
+        if (!audio || !audio.duration || !isFinite(audio.duration) || audio.duration <= 0) {
+          caption.textContent = text;
+          return;
+        }
+        const p = Math.min(1, audio.currentTime / audio.duration);
+        const n = Math.floor(p * words.length);
+        caption.innerHTML = words.map(function (w, i) {
+          return i <= n ? "<strong>" + w + "</strong>" : w;
+        }).join(" ");
+      }
+      caption.textContent = text;
+      audio.addEventListener("timeupdate", paint);
+      audio.addEventListener("ended", function () { caption.innerHTML = text; });
+    }
+
     async function speakSummary(fields) {
       playBtn.classList.remove("show");
       if (pendingAudioUrl) { URL.revokeObjectURL(pendingAudioUrl); pendingAudioUrl = ""; }
+      if (captionAudio) { try { captionAudio.pause(); } catch (e) {} captionAudio = null; }
+      const summary = confirmationSummary(fields);
+      if (caption) caption.textContent = summary;
       try {
         const res = await fetch("/speak", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: confirmationSummary(fields) })
+          body: JSON.stringify({ text: summary })
         });
         if (!res.ok) {
           const data = await res.json().catch(function () { return {}; });
@@ -564,6 +540,8 @@
         const audioBlob = await res.blob();
         pendingAudioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(pendingAudioUrl);
+        captionAudio = audio;
+        trackCaption(summary, audio);
         const playAttempt = audio.play();
         if (playAttempt && playAttempt.catch) {
           playAttempt.catch(function () { playBtn.classList.add("show"); });
@@ -572,6 +550,19 @@
         showBanner("Could not play confirmation audio. You can still confirm.", "error");
       }
     }
+
+    function revealCard() {
+      hero.classList.add("is-away");
+      confirmPanel.hidden = false;
+      confirmPanel.classList.add("show");
+      if (!reducedMotion()) confirmPanel.classList.add("crystallising");
+      confirmPanel.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "nearest" });
+      requestAnimationFrame(function () {
+        var api = fieldApi();
+        if (api && api.crystallise) api.crystallise(confirmPanel.getBoundingClientRect());
+      });
+    }
+
     async function openConfirmPanel(transcript) {
       hideBanner();
       extractConversationId = "";
@@ -583,6 +574,7 @@
         condition: "",
         extra_notes: ""
       };
+      let extractFailed = false;
       try {
         const res = await fetch("/extract", {
           method: "POST",
@@ -601,8 +593,12 @@
           extracted.condition = data.condition || "";
           extracted.extra_notes = data.extra_notes || "";
           if (data.conversation_id) extractConversationId = data.conversation_id;
+        } else {
+          extractFailed = true;
         }
-      } catch (err) {}
+      } catch (err) {
+        extractFailed = true;
+      }
       pendingExtraNotes = extracted.extra_notes || "";
       rawTranscriptEl.textContent = 'Heard: "' + transcript + '"';
       fieldItem.value = extracted.item;
@@ -613,20 +609,26 @@
       fieldContact.value = myPhone.value.trim();
       fieldPhoto.value = "";
       showExtractHint(extracted);
-      confirmPanel.classList.add("show");
-      confirmPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      if (result.extractFailed) {
+      revealCard();
+      if (extractFailed) {
         showBanner("Could not extract — Re-record or fill the form.", "error");
       }
-      speakSummary(extracted);
+      var beat = reducedMotion() ? 0 : 720;
+      setTimeout(function () { speakSummary(extracted); }, beat);
     }
     function closeConfirmPanel() {
       confirmPanel.classList.remove("show");
+      confirmPanel.classList.remove("crystallising");
+      confirmPanel.hidden = true;
+      hero.classList.remove("is-away");
       playBtn.classList.remove("show");
       extractHint.hidden = true;
       extractHint.textContent = "";
       pendingExtraNotes = "";
+      if (caption) caption.textContent = "";
+      if (captionAudio) { try { captionAudio.pause(); } catch (e) {} captionAudio = null; }
       if (pendingAudioUrl) { URL.revokeObjectURL(pendingAudioUrl); pendingAudioUrl = ""; }
+      setFieldMode("idle");
     }
 
     async function confirmListing() {
@@ -684,9 +686,13 @@
     confirmBtn.addEventListener("click", confirmListing);
     playBtn.addEventListener("click", function () {
       if (!pendingAudioUrl) return;
-      new Audio(pendingAudioUrl).play().catch(function () {});
+      var audio = new Audio(pendingAudioUrl);
+      captionAudio = audio;
+      trackCaption(caption.textContent, audio);
+      audio.play().catch(function () {});
     });
   </script>
+  <script src="/field.js"></script>
   <script src="/feed.js"></script>
 </body>
 </html>

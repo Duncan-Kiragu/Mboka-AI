@@ -1,62 +1,69 @@
 <!DOCTYPE html>
-<html lang="sw">
+<html lang="sw" data-day>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#ffffff" />
-  <meta name="description" content="Browse live jua kali listings. Open a listing for details, voice, Call and WhatsApp." />
-  <title>Mboka — Marketplace</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/feed.css" />
+  <meta name="theme-color" content="#efe6d2" />
+  <meta name="description" content="Soko la jua kali. Browse listings, hear the trader, Call or WhatsApp." />
+  <title>Mboka — Soko</title>
+  <link rel="stylesheet" href="/mboka.css" />
 </head>
 <body data-page="buyer">
-  <a class="skip" href="#main">Skip to listings</a>
+  <a class="skip" href="#main">Nenda kwenye listing</a>
 
   <header class="topbar">
-    <div class="topbar-inner">
-      <a class="brand" href="/feed.html">Mboka</a>
-      <nav class="top-nav" aria-label="Primary">
-        <a href="/feed.html" aria-current="page">Browse</a>
-        <a href="/">Sell</a>
-      </nav>
-    </div>
+    <a class="brand" href="/feed.html">
+      <span class="sw">Mboka</span>
+      <span class="en">The market feed</span>
+    </a>
+    <nav class="top-nav" aria-label="Primary">
+      <a href="/"><span class="sw">Uza</span><span class="en">Sell</span></a>
+      <a href="/feed.html" aria-current="page"><span class="sw">Soko</span><span class="en">Market</span></a>
+      <a href="/ussd.html"><span class="sw">*384#</span><span class="en">Any phone</span></a>
+    </nav>
   </header>
+
+  <div class="hem" aria-hidden="true">
+    <span class="hem-rule"></span>
+    <p>Sauti yako ndiyo duka lako</p>
+    <span class="hem-rule"></span>
+  </div>
 
   <main id="main" class="shell">
     <section id="feedView" class="view">
-      <div class="page-head">
-        <h1>Marketplace</h1>
-        <p class="lede">Newest listings from web, call, and USSD.</p>
+      <div class="signboard">
+        <h1 class="display offset" data-text="Soko">Soko</h1>
+        <p class="lede">
+          <span class="sw">Listing mpya juu. Ilisema, ilipigwa simu, au iliingia kwa simu ya kawaida.</span>
+          <span class="en">Newest listings from web, call, and USSD.</span>
+        </p>
+        <label class="search">
+          <span class="visually-hidden">Tafuta listing</span>
+          <input id="searchQuery" type="search" placeholder="Tafuta kitu au eneo" autocomplete="off" />
+        </label>
+        <div class="chips" id="filters" role="tablist" aria-label="Aina"></div>
       </div>
-
-      <label class="search">
-        <span class="visually-hidden">Search listings</span>
-        <input id="searchQuery" type="search" placeholder="Search items or areas" autocomplete="off" />
-      </label>
-
-      <div class="chips" id="filters" role="tablist" aria-label="Category"></div>
 
       <div class="toolbar">
         <select id="locationFilter" aria-label="Filter by location"></select>
         <div class="feed-tabs" role="tablist" aria-label="Whose listings">
-          <button type="button" id="tabAll" class="active">All</button>
-          <button type="button" id="tabMine">Mine</button>
+          <button type="button" id="tabAll" class="active">Zote · All</button>
+          <button type="button" id="tabMine">Zangu · Mine</button>
         </div>
       </div>
 
       <label class="phone-row">
-        <span>Your phone</span>
-        <input id="myPhone" type="tel" inputmode="tel" placeholder="Needed for Mine" autocomplete="tel" />
+        <span>Simu yako</span>
+        <input id="myPhone" type="tel" inputmode="tel" placeholder="Inahitajika kwa Zangu" autocomplete="tel" />
       </label>
 
       <div class="feed-meta">
-        <p id="feedCount">Loading listings…</p>
+        <p id="feedCount">Inapakia listing…</p>
         <p id="feedUpdated"></p>
       </div>
 
       <div id="feed" class="feed-grid" aria-live="polite"></div>
+      <p class="sponsors">Cursor · ElevenLabs · Render</p>
     </section>
 
     <section id="detailView" class="view" hidden>

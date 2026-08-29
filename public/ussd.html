@@ -3,39 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Mboka AI — USSD sim</title>
+  <title>Mboka AI — *384#</title>
+  <link rel="stylesheet" href="/mboka.css" />
   <style>
-    :root {
-      --bg: #1a1714;
-      --shell: #2a2622;
-      --lcd: #9ea86a;
-      --lcd-ink: #1a2210;
-      --key: #3a3530;
-      --key-hi: #4a4440;
-      --green: #1f6b3a;
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
-    body {
-      min-height: 100vh;
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, sans-serif;
-      background: radial-gradient(1200px 600px at 50% 0%, #3a3228, var(--bg));
-      color: #f4efe6;
-    }
-    .page {
-      max-width: 420px;
+    /* Deliberately crude handset — contrast is the argument */
+    .ussd-page {
+      max-width: 520px;
       margin: 0 auto;
-      padding: 20px 16px 40px;
-      text-align: center;
+      padding: 12px var(--gutter) 40px;
     }
-    .page h1 { margin: 0; font-size: 1.15rem; letter-spacing: -0.02em; }
-    .page p { margin: 8px 0 16px; color: #c9bba8; font-size: 0.88rem; line-height: 1.4; }
-    .page a { color: #d7e8c8; }
+    .ussd-page .lede-block { max-width: 36ch; margin: 12px 0 20px; }
     .phone {
       width: 280px;
-      margin: 0 auto;
-      background: linear-gradient(180deg, #3d3833, #1f1c19);
+      margin: 8px 0 0;
+      background: #1f1c19;
       border-radius: 36px 36px 48px 48px;
       padding: 18px 18px 22px;
       box-shadow: 0 24px 50px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
@@ -44,19 +25,21 @@
       width: 64px; height: 8px; margin: 4px auto 12px;
       background: #111; border-radius: 8px;
     }
-    .brand {
+    .phone-brand {
       font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase;
-      color: #8a8176; margin-bottom: 8px;
+      color: #8a8176; margin-bottom: 8px; text-align: center;
+      font-family: "Lucida Console", "Courier New", monospace;
     }
     .lcd {
-      background: linear-gradient(#b7c07a, var(--lcd));
-      color: var(--lcd-ink);
-      border-radius: 6px;
+      background: #9ea86a;
+      color: #1a2210;
+      border-radius: 2px;
       min-height: 168px;
       padding: 8px 10px 6px;
       text-align: left;
-      box-shadow: inset 0 0 0 3px #1a1814, inset 0 8px 16px rgba(0,0,0,0.12);
+      box-shadow: inset 0 0 0 3px #111, inset 0 8px 16px rgba(0,0,0,0.2);
       font-family: "Lucida Console", "Courier New", monospace;
+      image-rendering: pixelated;
     }
     .lcd-net {
       display: flex; justify-content: space-between; font-size: 0.62rem;
@@ -75,23 +58,24 @@
     }
     .reply-row span { font-size: 0.65rem; opacity: 0.7; }
     #reply {
-      flex: 1; border: 0; background: transparent; color: var(--lcd-ink);
+      flex: 1; border: 0; background: transparent; color: #1a2210;
       font: inherit; font-size: 0.85rem; outline: none; min-width: 0;
+      font-family: "Lucida Console", "Courier New", monospace;
     }
     .soft {
       display: flex; justify-content: space-between; margin: 10px 6px 0;
       font-size: 0.68rem; color: #c9c2b6; letter-spacing: 0.04em;
     }
-    .nav {
+    .keys {
       display: grid;
       grid-template-columns: 1fr 56px 1fr;
       gap: 8px;
       margin: 10px 8px 12px;
       align-items: center;
     }
-    .nav button {
-      height: 36px; border: 0; border-radius: 8px;
-      background: var(--key); color: #eee; font-weight: 700; cursor: pointer;
+    .keys button {
+      height: 36px; border: 0; border-radius: 4px;
+      background: #3a3530; color: #eee; font-weight: 700; cursor: pointer;
     }
     .ok {
       width: 56px; height: 56px; border-radius: 50%;
@@ -103,11 +87,11 @@
       gap: 8px;
     }
     .pad button {
-      height: 42px; border: 0; border-radius: 10px;
-      background: var(--key); color: #f4efe6; cursor: pointer;
+      height: 42px; border: 0; border-radius: 4px;
+      background: #3a3530; color: #f4efe6; cursor: pointer;
       font-family: inherit;
     }
-    .pad button:active, .nav button:active, .ok:active { background: var(--key-hi); }
+    .pad button:active, .keys button:active, .ok:active { background: #4a4440; }
     .pad .num { font-size: 1.05rem; font-weight: 700; display: block; line-height: 1; }
     .pad .letters { font-size: 0.55rem; letter-spacing: 0.12em; color: #b7aea3; }
     .status {
@@ -118,16 +102,31 @@
   </style>
 </head>
 <body>
-  <div class="page">
-    <h1>USSD simulator</h1>
-    <p>
-      Fake feature phone. No shortcode, no Africa’s Talking.
-      Dial <strong>*384*#</strong> then sell — it posts to the same
-      <a href="/">feed</a> as web listings (<code>source_channel: ussd</code>).
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="sw">Mboka</span>
+      <span class="en">Same shop. Any phone.</span>
+    </a>
+    <nav class="top-nav" aria-label="Primary">
+      <a href="/"><span class="sw">Uza</span><span class="en">Sell</span></a>
+      <a href="/feed.html"><span class="sw">Soko</span><span class="en">Market</span></a>
+      <a href="/ussd.html" aria-current="page"><span class="sw">*384#</span><span class="en">Any phone</span></a>
+    </nav>
+  </header>
+  <div class="hem" aria-hidden="true">
+    <span class="hem-rule"></span>
+    <p>Sauti yako ndiyo duka lako</p>
+    <span class="hem-rule"></span>
+  </div>
+  <div class="ussd-page">
+    <h1 class="display">Simu ya kawaida</h1>
+    <p class="lede-block">
+      <span class="sw">Hakuna data. Menyu ya namba. Listing iyo hiyo.</span>
+      <span class="en">Fake feature phone. Dial *384*# then sell — it posts to the same feed as web listings.</span>
     </p>
     <div class="phone" aria-label="Feature phone">
       <div class="earpiece"></div>
-      <div class="brand">Mboka · sim</div>
+      <div class="phone-brand">Mboka · sim</div>
       <div class="lcd">
         <div class="lcd-net"><span>Safaricom</span><span id="msisdn">0712888001</span></div>
         <div id="screenText"></div>
@@ -137,7 +136,7 @@
         </div>
       </div>
       <div class="soft"><span>Send</span><span>Clear</span></div>
-      <div class="nav">
+      <div class="keys">
         <button type="button" id="btnSend" title="Send">Send</button>
         <button type="button" class="ok" id="btnOk" title="OK">OK</button>
         <button type="button" id="btnClr" title="Clear">Clr</button>
@@ -145,6 +144,7 @@
       <div class="pad" id="pad"></div>
     </div>
     <p class="status" id="status"></p>
+    <p class="sponsors">Cursor · ElevenLabs · Render · <a href="/feed.html">Soko</a></p>
   </div>
   <script>
     const CONTACT = "0712888001";
