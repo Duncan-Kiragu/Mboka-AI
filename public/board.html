@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a1008" />
+  <title>Mboka AI — Jukwaa</title>
+  <link rel="stylesheet" href="/mboka.css" />
+  <style>
+    .board-page {
+      padding: 16px var(--gutter) calc(40px + var(--safe-b));
+      max-width: 1100px;
+    }
+    .board-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: baseline;
+      margin: 0 0 18px;
+    }
+    .mode-chip {
+      font-family: var(--display);
+      font-size: var(--t0);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--gold);
+      border: 2px solid var(--gold);
+      padding: 4px 10px;
+    }
+    .phone-line { color: var(--muted); font-size: var(--t1); }
+    .say-stage {
+      margin: 0 0 22px;
+      padding: 18px 0 22px;
+      border-top: 6px solid var(--gold);
+      border-bottom: 2px solid var(--voice);
+    }
+    .say-stage .label {
+      font-size: var(--t0);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 8px;
+    }
+    .say-stage .say {
+      margin: 0;
+      font-family: var(--display);
+      font-size: clamp(2.2rem, 7vw, 4.6rem);
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      text-transform: uppercase;
+    }
+    .board-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 20px 28px;
+    }
+    @media (max-width: 760px) {
+      .board-grid { grid-template-columns: 1fr; }
+    }
+    .ledger {
+      background: var(--paper);
+      color: var(--ink);
+      border: 3px solid var(--ink);
+      padding: 16px 18px 14px;
+    }
+    .ledger h2 {
+      margin: 0 0 12px;
+      font-family: var(--display);
+      text-transform: uppercase;
+      font-size: var(--t3);
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: var(--t2);
+    }
+    .row .missing { color: var(--voice-deep); font-style: italic; }
+    .gaps { margin: 12px 0 0; font-size: var(--t1); color: var(--muted-2); }
+    .posted {
+      display: none;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 3px double var(--ink);
+    }
+    .posted.show { display: block; }
+    .posted a { color: var(--voice-deep); font-weight: 700; }
+    .transcript-box .label {
+      font-size: var(--t0);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 8px;
+    }
+    .transcript-box p {
+      margin: 0;
+      font-size: var(--t3);
+      line-height: 1.35;
+      border-left: 4px solid var(--voice);
+      padding: 8px 0 8px 14px;
+      background: rgba(239, 230, 210, 0.06);
+    }
+    .empty {
+      display: none;
+      text-align: left;
+      padding: 28px 0 12px;
+      border-top: 6px solid var(--gold);
+    }
+    .empty.show { display: block; }
+    .empty h2 {
+      margin: 0 0 10px;
+      font-family: var(--display);
+      font-size: clamp(2.4rem, 8vw, 4.2rem);
+      line-height: 0.92;
+      text-transform: uppercase;
+    }
+    .empty .hint { max-width: 42ch; }
+    .live { display: none; }
+    .live.show { display: block; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="sw">Mboka</span>
+      <span class="en">Call reflected on the board</span>
+    </a>
+    <nav class="top-nav" aria-label="Primary">
+      <a href="/"><span class="sw">Uza</span><span class="en">Sell</span></a>
+      <a href="/feed.html"><span class="sw">Soko</span><span class="en">Market</span></a>
+      <a href="/call.html"><span class="sw">Simu</span><span class="en">Call</span></a>
+      <a href="/board.html" aria-current="page"><span class="sw">Jukwaa</span><span class="en">Board</span></a>
+      <a href="/ussd.html"><span class="sw">*384#</span><span class="en">Any phone</span></a>
+    </nav>
+  </header>
+  <div class="hem" aria-hidden="true">
+    <span class="hem-rule"></span>
+    <p>Sauti yako ndiyo duka lako</p>
+    <span class="hem-rule"></span>
+  </div>
+
+  <div class="board-page">
+    <h1 class="display">Jukwaa</h1>
+    <p class="lede-block">
+      <span class="sw">Skrini kubwa. Simu inazungumza; hapa tunaona.</span>
+      <span class="en">Read-only. The handset at /call.html drives the turn.</span>
+    </p>
+
+    <div id="empty" class="empty show">
+      <h2>Subiri simu…</h2>
+      <p class="hint">
+        <span class="sw">Waiting for the handset.</span>
+        <span class="en">Open /call.html on a phone on the same host. Tap Nena and speak — this board will follow.</span>
+      </p>
+    </div>
+
+    <div id="live" class="live">
+      <div class="board-meta">
+        <span id="modeChip" class="mode-chip">idle</span>
+        <span id="phoneLine" class="phone-line"></span>
+      </div>
+
+      <div class="say-stage">
+        <div class="label">Mboka anasema</div>
+        <p class="say" id="sayLine"></p>
+      </div>
+
+      <div class="board-grid">
+        <div class="ledger" id="ledger">
+          <h2>Risiti ya soko</h2>
+          <div class="row"><span>Kitu</span><span id="fItem" class="missing">—</span></div>
+          <div class="row"><span>Bei</span><span id="fPrice" class="missing">—</span></div>
+          <div class="row"><span>Mahali</span><span id="fLocation" class="missing">—</span></div>
+          <div class="row"><span>Aina</span><span id="fCategory" class="missing">—</span></div>
+          <div class="row"><span>Maelezo</span><span id="fNotes" class="missing">—</span></div>
+          <p class="gaps" id="gaps"></p>
+          <div class="posted" id="posted">
+            <strong>Imewekwa.</strong>
+            <p style="margin:8px 0 0"><a id="feedLink" href="/feed.html">Angalia kwenye feed &rarr;</a></p>
+          </div>
+        </div>
+        <div class="transcript-box">
+          <div class="label">Tumesikia</div>
+          <p id="transcript"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const emptyEl = document.getElementById("empty");
+    const liveEl = document.getElementById("live");
+    const sayLine = document.getElementById("sayLine");
+    const modeChip = document.getElementById("modeChip");
+    const phoneLine = document.getElementById("phoneLine");
+    const transcriptEl = document.getElementById("transcript");
+    const gapsEl = document.getElementById("gaps");
+    const postedEl = document.getElementById("posted");
+    const feedLink = document.getElementById("feedLink");
+
+    const pinned = new URLSearchParams(location.search).get("sessionId") || "";
+    const MODE_LABEL = {
+      idle: "Subiri · idle",
+      question: "Swali · question",
+      confirm: "Thibitisha · confirm",
+      done: "Imeisha · done"
+    };
+    const SLOT_SW = { item: "kitu", price: "bei", location: "mahali" };
+
+    function setField(el, value, prefix) {
+      if (value === "" || value === null || value === undefined) {
+        el.textContent = "—";
+        el.className = "missing";
+        return;
+      }
+      el.textContent = prefix ? prefix + value : String(value);
+      el.className = "";
+    }
+
+    function showEmpty() {
+      emptyEl.className = "empty show";
+      liveEl.className = "live";
+    }
+
+    function showLive(data) {
+      emptyEl.className = "empty";
+      liveEl.className = "live show";
+      const mode = data.mode || "idle";
+      modeChip.textContent = MODE_LABEL[mode] || mode;
+      const phone = data.phoneNumber ? data.phoneNumber : "simu haijatajwa";
+      phoneLine.textContent = phone + (data.sessionId ? " · " + data.sessionId : "");
+      sayLine.textContent = data.say || "…";
+      transcriptEl.textContent = data.transcript || "—";
+
+      const fields = data.fields || {};
+      setField(document.getElementById("fItem"), fields.item);
+      setField(document.getElementById("fPrice"), fields.price === "" || fields.price == null ? "" : fields.price, "KSh ");
+      setField(document.getElementById("fLocation"), fields.location);
+      setField(document.getElementById("fCategory"), fields.category);
+      setField(document.getElementById("fNotes"), fields.extra_notes);
+
+      const missing = Array.isArray(data.missing) ? data.missing : [];
+      gapsEl.textContent = missing.length
+        ? "Bado: " + missing.map(function (s) { return SLOT_SW[s] || s; }).join(", ")
+        : "Sehemu zote zimejaa.";
+
+      if (data.listingId) {
+        postedEl.className = "posted show";
+        feedLink.href = "/feed.html?id=" + encodeURIComponent(data.listingId);
+      } else {
+        postedEl.className = "posted";
+      }
+    }
+
+    async function poll() {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const url = pinned ? "/call/live?sessionId=" + encodeURIComponent(pinned) : "/call/live";
+        const res = await fetch(url);
+        const data = await res.json().catch(function () { return {}; });
+        if (data && data.active) showLive(data);
+        else showEmpty();
+      } catch (e) {
+        /* keep last frame — projector should not flicker on a dropped poll */
+      }
+    }
+
+    poll();
+    setInterval(poll, 800);
+  </script>
+</body>
+</html>

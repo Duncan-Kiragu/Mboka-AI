@@ -324,7 +324,10 @@
       copy.appendChild(item);
       copy.appendChild(meta);
       card.appendChild(copy);
-      addContactRow(card, listing, true);
+      var foot = document.createElement("div");
+      foot.className = "card-foot";
+      addContactRow(foot, listing, true);
+      card.appendChild(foot);
     } else {
       if (listing.photo_url) {
         var img = document.createElement("img");
@@ -361,7 +364,10 @@
         metaEl.appendChild(soldEl);
       }
       card.appendChild(metaEl);
-      addContactRow(card, listing, true);
+      var compactFoot = document.createElement("div");
+      compactFoot.className = "card-foot";
+      addContactRow(compactFoot, listing, true);
+      card.appendChild(compactFoot);
     }
 
     card.addEventListener("click", function (e) {

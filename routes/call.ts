@@ -7,6 +7,7 @@
  */
 import { Router, type Request, type Response } from "express";
 import { extractFromTranscript, type ExtractFields } from "../lib/extract.js";
+import { speak, toDataUrl } from "../lib/elevenlabs.js";
 import { CATEGORIES, store, type Category } from "../lib/store.js";
 
 const ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
@@ -17,6 +18,7 @@ export type CallSession = {
   phoneNumber: string;
   transcript: string;
   recordedAt: string;
+  audio_url: string;
 };
 
 const callSessions = new Map<string, CallSession>();
@@ -102,6 +104,7 @@ callRouter.post("/call/record", async (req: Request, res: Response) => {
       phoneNumber,
       transcript,
       recordedAt: new Date().toISOString(),
+      audio_url: "data:" + mimeType + ";base64," + audioB64,
     };
     callSessions.set(sessionId, session);
 
@@ -152,6 +155,8 @@ type DialogueState = {
   correcting: Slot | null;
   listingId: string;
   updatedAt: number;
+  /** Last spoken line — board reads this; POST bodies stay unchanged. */
+  lastSay: string;
 };
 
 const dialogues = new Map<string, DialogueState>();
@@ -271,6 +276,7 @@ function dialogueFor(session: CallSession): DialogueState {
     correcting: null,
     listingId: "",
     updatedAt: Date.now(),
+    lastSay: "",
   };
   dialogues.set(session.sessionId, created);
   return created;
@@ -327,25 +333,37 @@ function advance(sessionId: string, state: DialogueState): Prompt {
   const missing = missingSlots(state.fields);
   if (missing.length) {
     state.awaiting = missing[0];
+    const say = QUESTION[missing[0]];
+    state.lastSay = say;
     return {
       sessionId,
       mode: "question",
-      say: QUESTION[missing[0]],
+      say,
       fields: state.fields,
       missing,
     };
   }
   state.awaiting = "confirm";
+  const say = summaryLine(state.fields);
+  state.lastSay = say;
   return {
     sessionId,
     mode: "confirm",
-    say: summaryLine(state.fields),
+    say,
     fields: state.fields,
     missing,
   };
 }
 
-function postListing(session: CallSession, state: DialogueState) {
+async function postListing(session: CallSession, state: DialogueState) {
+  let narration_url = "";
+  try {
+    const line = `${state.fields.item}, bei shilingi ${state.fields.price}, ${state.fields.location}.`;
+    const audio = await speak(line);
+    narration_url = toDataUrl(audio);
+  } catch (err) {
+    console.error("[call/narration]", err);
+  }
   const listing = store.create({
     item: state.fields.item,
     category: asCategory(state.fields.category),
@@ -355,6 +373,8 @@ function postListing(session: CallSession, state: DialogueState) {
     contact: session.phoneNumber,
     source_channel: "call",
     extra_notes: state.fields.extra_notes,
+    audio_url: session.audio_url || "",
+    narration_url,
   });
   state.awaiting = "done";
   state.correcting = null;
@@ -364,6 +384,7 @@ function postListing(session: CallSession, state: DialogueState) {
 }
 
 function doneReply(sessionId: string, state: DialogueState, say: string) {
+  state.lastSay = say;
   return {
     sessionId,
     mode: "done" as const,
@@ -452,6 +473,7 @@ callRouter.post("/call/answer", async (req: Request, res: Response) => {
     const slot = readSlotWord(heard);
     if (slot) {
       clearSlot(state, slot);
+      state.lastSay = QUESTION[slot];
       res.json({
         sessionId: session.sessionId,
         mode: "question",
@@ -475,6 +497,7 @@ callRouter.post("/call/answer", async (req: Request, res: Response) => {
     const correction = readCorrection(heard);
     if (correction) {
       clearSlot(state, correction);
+      state.lastSay = QUESTION[correction];
       res.json({
         sessionId: session.sessionId,
         mode: "question",
@@ -488,12 +511,13 @@ callRouter.post("/call/answer", async (req: Request, res: Response) => {
 
     const agreement = readAgreement(heard);
     if (agreement === "yes") {
-      const listing = postListing(session, state);
+      const listing = await postListing(session, state);
       res.json({ ...doneReply(session.sessionId, state, DONE_LINE), listing, transcript: heard });
       return;
     }
     if (agreement === "no") {
       state.awaiting = "change";
+      state.lastSay = CHANGE_PROMPT;
       res.json({
         sessionId: session.sessionId,
         mode: "confirm",
@@ -504,10 +528,12 @@ callRouter.post("/call/answer", async (req: Request, res: Response) => {
       });
       return;
     }
+    const unclear = `Sikuelewa. ${summaryLine(state.fields)}`;
+    state.lastSay = unclear;
     res.json({
       sessionId: session.sessionId,
       mode: "confirm",
-      say: `Sikuelewa. ${summaryLine(state.fields)}`,
+      say: unclear,
       fields: state.fields,
       missing: [] as Slot[],
       transcript: heard,
@@ -522,7 +548,7 @@ callRouter.post("/call/answer", async (req: Request, res: Response) => {
 });
 
 /** Tap fallback — keeps the demo alive when yes/no STT misfires. */
-callRouter.post("/call/confirm", (req: Request, res: Response) => {
+callRouter.post("/call/confirm", async (req: Request, res: Response) => {
   const session = resolveSession(req, res);
   if (!session) return;
 
@@ -542,6 +568,7 @@ callRouter.post("/call/confirm", (req: Request, res: Response) => {
   }
   if (req.body?.agree === false) {
     state.awaiting = "change";
+    state.lastSay = CHANGE_PROMPT;
     res.json({
       sessionId: session.sessionId,
       mode: "confirm",
@@ -552,6 +579,95 @@ callRouter.post("/call/confirm", (req: Request, res: Response) => {
     return;
   }
 
-  const listing = postListing(session, state);
+  const listing = await postListing(session, state);
   res.json({ ...doneReply(session.sessionId, state, DONE_LINE), listing });
+});
+
+/* ------------------------------------------------------------------ *
+ * Board / Jukwaa — read-only snapshot for the projector.
+ * Does not create sessions or advance dialogue.
+ * ------------------------------------------------------------------ */
+
+type LiveMode = "question" | "confirm" | "done" | "idle";
+
+function liveMode(awaiting: DialogueState["awaiting"] | undefined): LiveMode {
+  if (!awaiting) return "idle";
+  if (awaiting === "done") return "done";
+  if (awaiting === "confirm" || awaiting === "change") return "confirm";
+  return "question";
+}
+
+function liveFields(fields: ExtractFields | undefined) {
+  return {
+    item: fields?.item ?? "",
+    price: fields?.price ?? "",
+    location: fields?.location ?? "",
+    category: fields?.category ?? "",
+    extra_notes: fields?.extra_notes ?? "",
+  };
+}
+
+function sessionRecency(session: CallSession, state: DialogueState | undefined): number {
+  const recorded = Date.parse(session.recordedAt) || 0;
+  return Math.max(recorded, state?.updatedAt ?? 0);
+}
+
+function latestSession(): CallSession | undefined {
+  let best: CallSession | undefined;
+  let bestAt = -1;
+  for (const session of callSessions.values()) {
+    const at = sessionRecency(session, dialogues.get(session.sessionId));
+    if (at >= bestAt) {
+      bestAt = at;
+      best = session;
+    }
+  }
+  return best;
+}
+
+function derivedSay(state: DialogueState | undefined): string {
+  if (!state) return "";
+  if (state.lastSay) return state.lastSay;
+  if (state.awaiting === "done") return DONE_LINE;
+  if (state.awaiting === "change") return CHANGE_PROMPT;
+  if (state.awaiting === "confirm") return summaryLine(state.fields);
+  if (state.awaiting === "item" || state.awaiting === "price" || state.awaiting === "location") {
+    return QUESTION[state.awaiting];
+  }
+  return "";
+}
+
+function liveSnapshot(session: CallSession) {
+  const state = dialogues.get(session.sessionId);
+  const listing = state?.listingId ? store.get(state.listingId) : undefined;
+  return {
+    active: true as const,
+    sessionId: session.sessionId,
+    phoneNumber: session.phoneNumber,
+    recordedAt: session.recordedAt,
+    mode: liveMode(state?.awaiting),
+    awaiting: state?.awaiting ?? "",
+    say: derivedSay(state),
+    transcript: state?.accumulated || session.transcript,
+    fields: liveFields(state?.fields),
+    missing: state ? missingSlots(state.fields) : SLOT_ORDER.slice(),
+    listingId: state?.listingId ?? "",
+    ...(listing ? { listing } : {}),
+  };
+}
+
+/** Projector board polls this. Optional ?sessionId= pins one handset. */
+callRouter.get("/call/live", (req: Request, res: Response) => {
+  pruneDialogues();
+  const pinned = typeof req.query.sessionId === "string" ? req.query.sessionId.trim() : "";
+  const session = pinned ? callSessions.get(pinned) : latestSession();
+  if (pinned && !session) {
+    res.json({ active: false });
+    return;
+  }
+  if (!session) {
+    res.json({ active: false });
+    return;
+  }
+  res.json(liveSnapshot(session));
 });

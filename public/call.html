@@ -3,123 +3,141 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a1008" />
   <title>Mboka AI — Simu</title>
+  <link rel="stylesheet" href="/mboka.css" />
   <style>
-    :root {
-      --bg: #f4efe6;
-      --ink: #1c1914;
-      --muted: #5c564c;
-      --green: #1f6b3a;
-      --green-dark: #164a28;
-      --terracotta: #c45c26;
-      --card: #fffdf8;
-      --line: #e4d9c8;
-      --err: #9b1c1c;
-      --ok: #1f6b3a;
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
-    body {
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: var(--ink);
-      min-height: 100vh;
-    }
-    .wrap { max-width: 440px; margin: 0 auto; padding: 20px 16px 48px; }
-    header h1 { margin: 0; font-size: 1.7rem; letter-spacing: -0.03em; }
-    header p { margin: 6px 0 0; color: var(--muted); font-size: 0.95rem; }
-    .nav { margin-top: 10px; font-size: 0.9rem; }
-    .nav a { color: var(--green); }
-
-    .phone-bar { display: flex; gap: 8px; margin-top: 14px; }
+    /* Call simulator — tap-to-record stands in for an inbound line */
+    .call-page { padding: 12px var(--gutter) calc(40px + var(--safe-b)); max-width: 520px; }
+    .call-page .lede-block { max-width: 36ch; margin: 0 0 18px; }
+    .phone-bar { margin: 0 0 16px; }
     .phone-bar input {
-      flex: 1; padding: 10px 12px; border: 1px solid var(--line);
-      border-radius: 10px; font: inherit; background: #fff;
+      width: 100%;
+      border: 0;
+      border-bottom: 2px solid var(--gold);
+      background: transparent;
+      color: var(--paper);
+      padding: 8px 0;
+      outline: none;
     }
-
-    .recorder {
-      background: var(--card); border: 1px solid var(--line); border-radius: 20px;
-      padding: 28px 16px 22px; margin-top: 16px; text-align: center;
-    }
+    .recorder { text-align: left; margin: 8px 0 20px; }
     #micBtn {
-      width: 128px; height: 128px; border: 0; border-radius: 50%;
-      background: var(--green); color: #fff; font-size: 3rem; cursor: pointer;
-      box-shadow: 0 10px 24px rgba(31, 107, 58, 0.28);
+      width: min(42vw, 148px);
+      height: min(42vw, 148px);
+      border: 0;
+      border-radius: 50%;
+      background: var(--voice);
+      color: var(--paper);
+      font-family: var(--display);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      box-shadow: 0 0 0 8px rgba(226, 74, 22, 0.18);
     }
-    #micBtn:active { transform: scale(0.97); }
     #micBtn:disabled { opacity: 0.55; cursor: default; }
-    #micBtn.recording { background: var(--terracotta); animation: pulse 1.4s ease-in-out infinite; }
-    @keyframes pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(196, 92, 38, 0.45); }
-      50% { box-shadow: 0 0 0 18px rgba(196, 92, 38, 0); }
-    }
-    #micHint { margin: 14px 0 0; color: var(--muted); font-size: 0.9rem; }
-
+    #micBtn.recording { background: var(--voice-deep); }
+    #micHint { margin: 12px 0 0; color: var(--muted); }
     .prompt {
-      margin-top: 16px; background: var(--card); border: 1px solid var(--line);
-      border-radius: 16px; padding: 16px;
+      margin-top: 8px;
+      padding: 16px 0;
+      border-top: 6px solid var(--gold);
     }
     .prompt .label {
-      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--muted); margin-bottom: 6px;
+      font-size: var(--t0);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 6px;
     }
-    .prompt .say { font-size: 1.15rem; font-weight: 600; margin: 0; }
+    .prompt .say { font-size: var(--t3); font-weight: 700; margin: 0; }
     .replay {
-      margin-top: 10px; border: 1px solid var(--line); background: #fff;
-      border-radius: 999px; padding: 6px 14px; font: inherit; cursor: pointer;
+      margin-top: 10px;
+      border: 2px solid var(--gold);
+      background: transparent;
+      color: var(--paper);
+      padding: 8px 14px;
+      font-weight: 700;
     }
-
     .log { margin-top: 16px; }
     .turn {
-      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-      padding: 10px 12px; margin-bottom: 8px; font-size: 0.92rem;
+      border-left: 4px solid var(--gold);
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      background: rgba(239, 230, 210, 0.06);
     }
+    .turn.caller { border-left-color: var(--voice); }
     .turn .who {
-      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+      font-size: var(--t0);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
       color: var(--muted);
     }
-    .turn.caller { border-left: 3px solid var(--terracotta); }
-    .turn.mboka { border-left: 3px solid var(--green); }
-
     .fields {
-      margin-top: 16px; background: var(--card); border: 1px solid var(--line);
-      border-radius: 16px; padding: 14px 16px;
+      margin-top: 16px;
+      background: var(--paper);
+      color: var(--ink);
+      border: 3px solid var(--ink);
+      padding: 14px 16px;
     }
-    .fields h2 { margin: 0 0 10px; font-size: 0.95rem; }
-    .row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 0.93rem; }
-    .row span:first-child { color: var(--muted); }
-    .row .missing { color: var(--terracotta); font-style: italic; }
-
-    .actions { display: none; gap: 10px; margin-top: 14px; }
+    .fields h2 { margin: 0 0 10px; font-family: var(--display); text-transform: uppercase; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+    .row .missing { color: var(--voice-deep); font-style: italic; }
+    .actions { display: none; gap: 16px; margin-top: 14px; justify-content: space-between; }
     .actions.show { display: flex; }
-    .actions button { flex: 1; padding: 13px; border-radius: 12px; font: inherit; font-weight: 600; cursor: pointer; border: 0; }
-    #yesBtn { background: var(--green); color: #fff; }
-    #noBtn { background: #fff; color: var(--ink); border: 1px solid var(--line); }
-
-    .banner { margin-top: 14px; padding: 11px 13px; border-radius: 12px; font-size: 0.92rem; display: none; }
+    .actions button { font-family: var(--display); letter-spacing: 0.06em; text-transform: uppercase; border: 0; padding: 14px 18px; }
+    #yesBtn { background: var(--voice); color: var(--paper); min-width: 48%; }
+    #noBtn { background: transparent; color: var(--paper); text-decoration: underline; }
+    .banner { display: none; margin-top: 14px; padding: 10px 12px; border-left: 4px solid var(--voice); }
     .banner.show { display: block; }
-    .banner.error { background: #fdecec; color: var(--err); border: 1px solid #f3c9c9; }
-    .banner.info { background: #eaf3ec; color: var(--ok); border: 1px solid #cfe4d5; }
-
-    .done { margin-top: 16px; padding: 16px; border-radius: 16px; background: #eaf3ec; border: 1px solid #cfe4d5; display: none; }
+    .banner.error { color: #f0c4b8; }
+    .banner.info { color: var(--paper); border-color: var(--gold); }
+    .done {
+      display: none;
+      margin-top: 16px;
+      padding: 16px;
+      background: var(--paper);
+      color: var(--ink);
+      border: 3px solid var(--ink);
+    }
     .done.show { display: block; }
-    .done a { color: var(--green-dark); font-weight: 600; }
+    .done a { color: var(--voice-deep); font-weight: 700; }
+    .session-hint { display: none; margin: 0 0 14px; color: var(--muted); font-size: var(--t1); }
+    .session-hint.show { display: block; }
+    .session-hint a { color: var(--gold); }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <h1>Mboka AI — Simu</h1>
-      <p>Piga simu, sema unachouza. Tutakuuliza swali moja moja.</p>
-      <div class="nav"><a href="/index.html">Web</a> · <a href="/feed.html">Feed</a> · <a href="/ussd.html">USSD</a></div>
-    </header>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="sw">Mboka</span>
+      <span class="en">Tap-to-record call sim</span>
+    </a>
+    <nav class="top-nav" aria-label="Primary">
+      <a href="/"><span class="sw">Uza</span><span class="en">Sell</span></a>
+      <a href="/feed.html"><span class="sw">Soko</span><span class="en">Market</span></a>
+      <a href="/call.html" aria-current="page"><span class="sw">Simu</span><span class="en">Call</span></a>
+      <a href="/board.html"><span class="sw">Jukwaa</span><span class="en">Board</span></a>
+      <a href="/ussd.html"><span class="sw">*384#</span><span class="en">Any phone</span></a>
+    </nav>
+  </header>
+  <div class="hem" aria-hidden="true">
+    <span class="hem-rule"></span>
+    <p>Sauti yako ndiyo duka lako</p>
+    <span class="hem-rule"></span>
+  </div>
+  <div class="call-page">
+    <h1 class="display">Simu</h1>
+    <p class="lede-block">
+      <span class="sw">Sio line ya kweli. Gonga, nena — swali moja moja, kisha listing iyo hiyo.</span>
+      <span class="en">Tap-to-record stands in for an inbound call. Same extract, same feed.</span>
+    </p>
 
     <div class="phone-bar">
       <input id="myPhone" type="tel" inputmode="tel" placeholder="Namba yako, e.g. 0712345678" />
     </div>
+    <p id="sessionHint" class="session-hint"></p>
 
     <div class="recorder">
-      <button id="micBtn" aria-label="Rekodi">&#127908;</button>
+      <button id="micBtn" type="button" aria-label="Rekodi">Nena</button>
       <p id="micHint">Gonga kuanza simu</p>
     </div>
 
@@ -381,6 +399,16 @@
             return;
           }
           sessionId = started.data.sessionId;
+          var hint = document.getElementById("sessionHint");
+          if (hint && sessionId) {
+            hint.className = "session-hint show";
+            hint.textContent = "";
+            var pin = document.createElement("a");
+            pin.href = "/board.html?sessionId=" + encodeURIComponent(sessionId);
+            pin.textContent = "Jukwaa · " + sessionId;
+            hint.appendChild(document.createTextNode("Skrini kubwa: "));
+            hint.appendChild(pin);
+          }
           addTurn("Wewe", started.data.transcript || "");
 
           const next = await postJSON("/call/next", { sessionId: sessionId });

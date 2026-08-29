@@ -21,6 +21,7 @@
         <a href="/" aria-current="page"><span class="sw">Uza</span><span class="en">Sell</span></a>
         <a href="/feed.html"><span class="sw">Soko</span><span class="en">Market</span></a>
         <a href="/call.html"><span class="sw">Simu</span><span class="en">Call</span></a>
+        <a href="/board.html"><span class="sw">Jukwaa</span><span class="en">Board</span></a>
         <a href="/ussd.html"><span class="sw">*384#</span><span class="en">Any phone</span></a>
       </nav>
     </header>
@@ -35,7 +36,7 @@
       <div class="hero-copy">
         <h1 class="display offset" data-text="Sauti yako ndiyo duka.">Sauti yako ndiyo duka.</h1>
         <p class="hero-sub">
-          <span class="sw">Sema unachouza. Hatuna fomu.</span>
+          <span class="sw">Sema unachouza.</span>
           <span class="en">Tap once. Speak. We print the listing.</span>
         </p>
       </div>
@@ -43,7 +44,7 @@
       <div class="mic-wrap">
         <button id="micBtn" type="button" aria-label="Sema listing yako">
           <span class="mic-orb" aria-hidden="true"></span>
-          <span class="mic-word">Sema</span>
+          <span class="mic-word"></span>
         </button>
       </div>
       <div class="hero-meta">
@@ -149,7 +150,6 @@
     const SILENCE_MS = 2000;
     const MIN_RECORD_MS = 800;
     const RMS_THRESHOLD = 0.018;
-    const CALL_GREETING = "Niambie unauza nini?";
 
     const micBtn = document.getElementById("micBtn");
     const micWord = micBtn.querySelector(".mic-word");
@@ -184,10 +184,18 @@
     let audioContext = null;
     let rafId = 0;
     let pendingAudioUrl = "";
+    let pendingVoiceDataUrl = "";
+    let pendingNarrationDataUrl = "";
+    let lastHeard = "";
     let pendingExtraNotes = "";
     let extractConversationId = "";
     let clockTimer = 0;
     let captionAudio = null;
+    const FOLLOW_UP = {
+      item: "Unauza nini?",
+      price: "Bei ni ngapi?",
+      location: "Uko wapi?"
+    };
 
     myPhone.value = localStorage.getItem(PHONE_KEY) || "";
     myPhone.addEventListener("change", function () {
@@ -235,16 +243,18 @@
       }
       return "";
     }
-    function blobToBase64(blob) {
+    function blobToDataUrl(blob) {
       return new Promise(function (resolve, reject) {
         const reader = new FileReader();
-        reader.onloadend = function () {
-          const result = String(reader.result || "");
-          const comma = result.indexOf(",");
-          resolve(comma >= 0 ? result.slice(comma + 1) : result);
-        };
+        reader.onloadend = function () { resolve(String(reader.result || "")); };
         reader.onerror = reject;
         reader.readAsDataURL(blob);
+      });
+    }
+    function blobToBase64(blob) {
+      return blobToDataUrl(blob).then(function (dataUrl) {
+        const comma = dataUrl.indexOf(",");
+        return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
       });
     }
     function compressPhoto(file) {
@@ -326,42 +336,15 @@
       recording = false;
     }
 
-    function playGreeting(text) {
-      return fetch("/speak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text })
-      }).then(function (res) {
-        if (!res.ok) return;
-        return res.blob().then(function (blob) {
-          return new Promise(function (resolve) {
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            audio.onended = function () {
-              URL.revokeObjectURL(url);
-              resolve();
-            };
-            audio.onerror = function () {
-              URL.revokeObjectURL(url);
-              resolve();
-            };
-            const attempt = audio.play();
-            if (attempt && attempt.catch) attempt.catch(function () { resolve(); });
-          });
-        });
-      }).catch(function () {});
-    }
-
     async function startRecording() {
       hideBanner();
       setFieldMode("listen");
       micBtn.disabled = true;
-      setHint("Niambie unauza nini?", "Opening the mic…");
-      await playGreeting(CALL_GREETING);
-      micBtn.disabled = false;
+      setHint("Tunasikiliza…", "Listening — speak now");
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         showBanner("This browser cannot record audio. Try Chrome on a phone or laptop.", "error");
         setFieldMode("idle");
+        micBtn.disabled = false;
         return;
       }
       try {
@@ -377,8 +360,10 @@
           "error"
         );
         setFieldMode("idle");
+        micBtn.disabled = false;
         return;
       }
+      micBtn.disabled = false;
       chunks = [];
       const mime = pickMimeType();
       try {
@@ -387,6 +372,7 @@
         cleanupStream();
         showBanner("Could not start the recorder in this browser.", "error");
         setFieldMode("idle");
+        micBtn.disabled = false;
         return;
       }
       mediaRecorder.ondataavailable = function (e) {
@@ -442,15 +428,14 @@
           return;
         }
         const audio = await blobToBase64(blob);
-        // Plain STT for the web path. /call/record is the call intake — posting
-        // here opened a dialogue session per web recording that nothing closed.
+        pendingVoiceDataUrl = await blobToDataUrl(blob);
+        pendingNarrationDataUrl = "";
         const res = await fetch("/transcribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             audio: audio,
-            mimeType: blob.type || "audio/webm",
-            phoneNumber: myPhone.value.trim()
+            mimeType: blob.type || "audio/webm"
           })
         });
         const data = await res.json().catch(function () { return {}; });
@@ -465,7 +450,8 @@
           setFieldMode("idle");
           return;
         }
-        showBanner('Call recorded: "' + transcript + '"', "info");
+        lastHeard = transcript;
+        showBanner('Tumesikia: "' + transcript + '"', "info");
         await openConfirmPanel(transcript);
       } catch (err) {
         showBanner("Transcription failed. Check your connection and retry.", "error");
@@ -525,18 +511,35 @@
         return { extracted: blankExtracted(), extractFailed: true };
       }
     }
+    function firstMissing(fields) {
+      if (!(fields.item || "").trim()) return "item";
+      if (!(fields.price || "").trim()) return "price";
+      if (!(fields.location || "").trim()) return "location";
+      return "";
+    }
     function showExtractHint(fields) {
-      const missing = [];
-      if (!(fields.item || "").trim()) missing.push("item");
-      if (!(fields.price || "").trim()) missing.push("price");
-      if (!(fields.location || "").trim()) missing.push("location");
-      if (!missing.length) {
+      const gap = firstMissing(fields);
+      if (!gap) {
         extractHint.hidden = true;
         extractHint.textContent = "";
         return;
       }
+      const ask = FOLLOW_UP[gap];
       extractHint.hidden = false;
-      extractHint.textContent = "Missing " + missing.join(", ") + " — fill them in if you can. You can still Confirm.";
+      extractHint.textContent = ask + " — fill it in if you can. You can still Confirm.";
+      fetch("/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: ask })
+      }).then(function (res) {
+        if (!res.ok) return;
+        return res.blob().then(function (blob) {
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.onended = function () { URL.revokeObjectURL(url); };
+          audio.play().catch(function () {});
+        });
+      }).catch(function () {});
     }
 
     function trackCaption(text, audio) {
@@ -576,6 +579,7 @@
           return;
         }
         const audioBlob = await res.blob();
+        pendingNarrationDataUrl = await blobToDataUrl(audioBlob);
         pendingAudioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(pendingAudioUrl);
         captionAudio = audio;
@@ -591,6 +595,7 @@
 
     function revealCard() {
       hero.classList.add("is-away");
+      hero.setAttribute("aria-hidden", "true");
       confirmPanel.hidden = false;
       confirmPanel.classList.add("show");
       if (!reducedMotion()) confirmPanel.classList.add("crystallising");
@@ -620,14 +625,17 @@
       if (extractFailed) {
         showBanner("Could not extract — Re-record or fill the form.", "error");
       }
-      var beat = reducedMotion() ? 0 : 720;
-      setTimeout(function () { speakSummary(extracted); }, beat);
+      if (!firstMissing(extracted)) {
+        var beat = reducedMotion() ? 0 : 720;
+        setTimeout(function () { speakSummary(extracted); }, beat);
+      }
     }
     function closeConfirmPanel() {
       confirmPanel.classList.remove("show");
       confirmPanel.classList.remove("crystallising");
       confirmPanel.hidden = true;
       hero.classList.remove("is-away");
+      hero.removeAttribute("aria-hidden");
       playBtn.classList.remove("show");
       extractHint.hidden = true;
       extractHint.textContent = "";
@@ -664,6 +672,8 @@
             contact: fields.contact,
             photo_url: photo_url,
             extra_notes: pendingExtraNotes,
+            audio_url: pendingVoiceDataUrl,
+            narration_url: pendingNarrationDataUrl,
             source_channel: "web"
           })
         });
@@ -672,6 +682,9 @@
           return;
         }
         extractConversationId = "";
+        pendingVoiceDataUrl = "";
+        pendingNarrationDataUrl = "";
+        lastHeard = "";
         closeConfirmPanel();
         showBanner("Listing posted.", "info");
         if (window.MbokaFeed && window.MbokaFeed.refresh) await window.MbokaFeed.refresh();
