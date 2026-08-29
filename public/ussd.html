@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Mboka AI — USSD sim</title>
+  <style>
+    :root {
+      --bg: #1a1714;
+      --shell: #2a2622;
+      --lcd: #9ea86a;
+      --lcd-ink: #1a2210;
+      --key: #3a3530;
+      --key-hi: #4a4440;
+      --green: #1f6b3a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 50% 0%, #3a3228, var(--bg));
+      color: #f4efe6;
+    }
+    .page {
+      max-width: 420px;
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+      text-align: center;
+    }
+    .page h1 { margin: 0; font-size: 1.15rem; letter-spacing: -0.02em; }
+    .page p { margin: 8px 0 16px; color: #c9bba8; font-size: 0.88rem; line-height: 1.4; }
+    .page a { color: #d7e8c8; }
+    .phone {
+      width: 280px;
+      margin: 0 auto;
+      background: linear-gradient(180deg, #3d3833, #1f1c19);
+      border-radius: 36px 36px 48px 48px;
+      padding: 18px 18px 22px;
+      box-shadow: 0 24px 50px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    .earpiece {
+      width: 64px; height: 8px; margin: 4px auto 12px;
+      background: #111; border-radius: 8px;
+    }
+    .brand {
+      font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase;
+      color: #8a8176; margin-bottom: 8px;
+    }
+    .lcd {
+      background: linear-gradient(#b7c07a, var(--lcd));
+      color: var(--lcd-ink);
+      border-radius: 6px;
+      min-height: 168px;
+      padding: 8px 10px 6px;
+      text-align: left;
+      box-shadow: inset 0 0 0 3px #1a1814, inset 0 8px 16px rgba(0,0,0,0.12);
+      font-family: "Lucida Console", "Courier New", monospace;
+    }
+    .lcd-net {
+      display: flex; justify-content: space-between; font-size: 0.62rem;
+      letter-spacing: 0.04em; margin-bottom: 6px; opacity: 0.75;
+    }
+    #screenText {
+      white-space: pre-wrap;
+      font-size: 0.78rem;
+      line-height: 1.28;
+      min-height: 96px;
+    }
+    .reply-row {
+      display: flex; align-items: center; gap: 6px;
+      border-top: 1px solid rgba(26,34,16,0.25);
+      padding-top: 4px; margin-top: 6px;
+    }
+    .reply-row span { font-size: 0.65rem; opacity: 0.7; }
+    #reply {
+      flex: 1; border: 0; background: transparent; color: var(--lcd-ink);
+      font: inherit; font-size: 0.85rem; outline: none; min-width: 0;
+    }
+    .soft {
+      display: flex; justify-content: space-between; margin: 10px 6px 0;
+      font-size: 0.68rem; color: #c9c2b6; letter-spacing: 0.04em;
+    }
+    .nav {
+      display: grid;
+      grid-template-columns: 1fr 56px 1fr;
+      gap: 8px;
+      margin: 10px 8px 12px;
+      align-items: center;
+    }
+    .nav button {
+      height: 36px; border: 0; border-radius: 8px;
+      background: var(--key); color: #eee; font-weight: 700; cursor: pointer;
+    }
+    .ok {
+      width: 56px; height: 56px; border-radius: 50%;
+      background: #4a6b3a; color: #fff; border: 0; font-weight: 800; cursor: pointer;
+    }
+    .pad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .pad button {
+      height: 42px; border: 0; border-radius: 10px;
+      background: var(--key); color: #f4efe6; cursor: pointer;
+      font-family: inherit;
+    }
+    .pad button:active, .nav button:active, .ok:active { background: var(--key-hi); }
+    .pad .num { font-size: 1.05rem; font-weight: 700; display: block; line-height: 1; }
+    .pad .letters { font-size: 0.55rem; letter-spacing: 0.12em; color: #b7aea3; }
+    .status {
+      margin-top: 16px; min-height: 1.3em; font-size: 0.85rem; color: #c9bba8;
+    }
+    .status.ok { color: #9dce9a; }
+    .status.err { color: #f0a3a3; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>USSD simulator</h1>
+    <p>
+      Fake feature phone. No shortcode, no Africa’s Talking.
+      Dial <strong>*384*#</strong> then sell — it posts to the same
+      <a href="/">feed</a> as web listings (<code>source_channel: ussd</code>).
+    </p>
+    <div class="phone" aria-label="Feature phone">
+      <div class="earpiece"></div>
+      <div class="brand">Mboka · sim</div>
+      <div class="lcd">
+        <div class="lcd-net"><span>Safaricom</span><span id="msisdn">0712888001</span></div>
+        <div id="screenText"></div>
+        <div class="reply-row">
+          <span>&gt;</span>
+          <input id="reply" type="text" maxlength="20" autocomplete="off" aria-label="USSD reply" />
+        </div>
+      </div>
+      <div class="soft"><span>Send</span><span>Clear</span></div>
+      <div class="nav">
+        <button type="button" id="btnSend" title="Send">Send</button>
+        <button type="button" class="ok" id="btnOk" title="OK">OK</button>
+        <button type="button" id="btnClr" title="Clear">Clr</button>
+      </div>
+      <div class="pad" id="pad"></div>
+    </div>
+    <p class="status" id="status"></p>
+  </div>
+  <script>
+    const CONTACT = "0712888001";
+    const CATEGORIES = [
+      { key: "1", category: "furniture", label: "Vitu vya mbao" },
+      { key: "2", category: "clothing", label: "Nguo" },
+      { key: "3", category: "food", label: "Chakula" },
+      { key: "4", category: "services", label: "Huduma" },
+      { key: "5", category: "other", label: "Nyingine" }
+    ];
+    const LOCATIONS = [
+      { key: "1", name: "Kawangware" },
+      { key: "2", name: "Kayole" },
+      { key: "3", name: "Eastleigh" },
+      { key: "4", name: "Kibra" },
+      { key: "5", name: "Githurai" }
+    ];
+    const WELCOME =
+      "Karibu Jua Kali Marketplace.\n1. Uza kitu\n2. Tafuta fundi";
+    const CATEGORY_MENU =
+      "1. Vitu vya mbao\n2. Nguo\n3. Chakula\n4. Huduma\n5. Nyingine";
+    const CONFIRM_TAIL = "1. Ndio\n2. Hapana";
+
+    const screenText = document.getElementById("screenText");
+    const reply = document.getElementById("reply");
+    const statusEl = document.getElementById("status");
+    const pad = document.getElementById("pad");
+
+    let step = "idle";
+    let draft = emptyDraft();
+    let busy = false;
+
+    function emptyDraft() {
+      return { item: "", category: "", categoryLabel: "", price: "", location: "" };
+    }
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg || "";
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function show(text, placeholder) {
+      screenText.textContent = text;
+      reply.value = "";
+      reply.placeholder = placeholder || "";
+      reply.maxLength = 20;
+      reply.focus();
+    }
+
+    function goIdle() {
+      step = "idle";
+      draft = emptyDraft();
+      show("Dial *384*#\n\nBonyeza * 3 8 4 * #", "");
+    }
+
+    function goWelcome() {
+      step = "welcome";
+      draft = emptyDraft();
+      show(WELCOME, "1 au 2");
+    }
+
+    function confirmCopy() {
+      const price = draft.price ? "KSh " + draft.price : "bei?";
+      return (
+        "Umeongeza: " + (draft.item || draft.categoryLabel) +
+        ", " + price + ", " + (draft.location || "?") + ".\n" +
+        CONFIRM_TAIL
+      );
+    }
+
+    function handleIdle(raw) {
+      const d = raw.replace(/\s/g, "");
+      if (d === "*384*#" || d === "*384#" || d === "384") goWelcome();
+    }
+
+    function handleWelcome(raw) {
+      if (raw === "1") {
+        step = "category";
+        show(CATEGORY_MENU, "1-5");
+      } else if (raw === "2") {
+        step = "searchCat";
+        show("Tafuta fundi\n" + CATEGORY_MENU, "1-5");
+      }
+    }
+
+    function pickCategory(raw) {
+      return CATEGORIES.find(function (c) { return c.key === raw; });
+    }
+
+    function handleCategory(raw) {
+      const cat = pickCategory(raw);
+      if (!cat) return;
+      draft.category = cat.category;
+      draft.categoryLabel = cat.label;
+      step = "item";
+      show("Andika kitu (≤20):", "kitu");
+    }
+
+    function handleItem(raw) {
+      if (!raw) return;
+      draft.item = raw.slice(0, 20);
+      step = "price";
+      reply.maxLength = 8;
+      show("Bei (KES):", "namba");
+    }
+
+    function handlePrice(raw) {
+      const n = raw.replace(/[^\d]/g, "");
+      if (!n) return;
+      draft.price = String(Number(n));
+      step = "location";
+      show(
+        "Location:\n" +
+          LOCATIONS.map(function (l) { return l.key + ". " + l.name; }).join("\n") +
+          "\n0. Nyingine (≤20)",
+        "0-5"
+      );
+    }
+
+    function handleLocation(raw) {
+      if (raw === "0") {
+        step = "locationText";
+        show("Andika location (≤20):", "eneo");
+        return;
+      }
+      const loc = LOCATIONS.find(function (l) { return l.key === raw; });
+      if (!loc) return;
+      draft.location = loc.name;
+      step = "confirm";
+      show(confirmCopy(), "1 au 2");
+    }
+
+    function handleLocationText(raw) {
+      if (!raw) return;
+      draft.location = raw.slice(0, 20);
+      step = "confirm";
+      show(confirmCopy(), "1 au 2");
+    }
+
+    function handleSearchCat(raw) {
+      const cat = pickCategory(raw);
+      if (!cat) return;
+      draft.category = cat.category;
+      step = "searchLoc";
+      show(
+        "Eneo:\n" +
+          LOCATIONS.map(function (l) { return l.key + ". " + l.name; }).join("\n") +
+          "\n0. Nyingine",
+        "0-5"
+      );
+    }
+
+    async function handleSearchLoc(raw) {
+      let area = "";
+      if (raw === "0") {
+        step = "searchLocText";
+        show("Andika eneo (≤20):", "eneo");
+        return;
+      }
+      const loc = LOCATIONS.find(function (l) { return l.key === raw; });
+      if (!loc) return;
+      area = loc.name;
+      await showSearchResults(area);
+    }
+
+    async function handleSearchLocText(raw) {
+      if (!raw) return;
+      await showSearchResults(raw.slice(0, 20));
+    }
+
+    async function showSearchResults(area) {
+      try {
+        const res = await fetch("/listings");
+        const rows = await res.json();
+        const hits = rows.filter(function (l) {
+          if (l.category !== draft.category) return false;
+          if (!area) return true;
+          return String(l.location || "").toLowerCase().indexOf(area.toLowerCase()) >= 0;
+        }).slice(0, 3);
+        if (!hits.length) {
+          show("Hakuna fundi.\n0. Rudi", "0");
+        } else {
+          const lines = hits.map(function (l, i) {
+            return (i + 1) + ". " + (l.item || "").slice(0, 18);
+          });
+          show(lines.join("\n") + "\n0. Rudi", "0");
+        }
+        step = "searchDone";
+      } catch (err) {
+        show("Hitilafu. 0. Rudi", "0");
+        step = "searchDone";
+      }
+    }
+
+    function handleSearchDone(raw) {
+      if (raw === "0") goWelcome();
+    }
+
+    async function handleConfirm(raw) {
+      if (raw === "2") {
+        show("Hapana. Session imeisha.\n\n0. *384*# tena", "0");
+        step = "done";
+        return;
+      }
+      if (raw !== "1") return;
+      if (busy) return;
+      busy = true;
+      setStatus("Inatuma…");
+      try {
+        const body = {
+          item: draft.item || draft.categoryLabel,
+          price: Number(draft.price),
+          location: draft.location,
+          category: draft.category,
+          condition: "",
+          contact: CONTACT,
+          source_channel: "ussd"
+        };
+        const res = await fetch("/listings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+          setStatus("Listing haikuenda. Jaribu tena.", "err");
+          busy = false;
+          return;
+        }
+        const listing = await res.json();
+        step = "done";
+        show(
+          "Asante. Listing iko live.\n" +
+            (listing.item || "") + "\nKSh " + (listing.price || "?") +
+            "\n" + (listing.location || "") +
+            "\n\n0. Rudi  ·  fungua feed",
+          "0"
+        );
+        setStatus("USSD listing posted — same feed as web.", "ok");
+      } catch (err) {
+        setStatus("Listing haikuenda. Jaribu tena.", "err");
+      } finally {
+        busy = false;
+      }
+    }
+
+    function handleDone(raw) {
+      if (raw === "0") goIdle();
+    }
+
+    async function submit() {
+      if (busy) return;
+      const raw = reply.value.trim();
+      if (step === "idle") return handleIdle(raw);
+      if (step === "welcome") return handleWelcome(raw);
+      if (step === "category") return handleCategory(raw);
+      if (step === "item") return handleItem(raw);
+      if (step === "price") return handlePrice(raw);
+      if (step === "location") return handleLocation(raw);
+      if (step === "locationText") return handleLocationText(raw);
+      if (step === "confirm") return handleConfirm(raw);
+      if (step === "searchCat") return handleSearchCat(raw);
+      if (step === "searchLoc") return handleSearchLoc(raw);
+      if (step === "searchLocText") return handleSearchLocText(raw);
+      if (step === "searchDone") return handleSearchDone(raw);
+      if (step === "done") return handleDone(raw);
+    }
+
+    const menuSteps = {
+      welcome: true,
+      category: true,
+      location: true,
+      confirm: true,
+      searchCat: true,
+      searchLoc: true,
+      searchDone: true,
+      done: true
+    };
+
+    function pressKey(ch) {
+      if (ch === "Send") {
+        submit();
+        return;
+      }
+      if (ch === "Clr") {
+        if (reply.value) {
+          reply.value = reply.value.slice(0, -1);
+          return;
+        }
+        if (step !== "idle") goIdle();
+        return;
+      }
+      reply.value = (reply.value + ch).slice(0, reply.maxLength || 20);
+      if (step === "idle" && reply.value.replace(/\s/g, "") === "*384*#") {
+        submit();
+        return;
+      }
+      if (menuSteps[step] && /^[0-9]$/.test(ch)) {
+        submit();
+      }
+    }
+
+    const keys = [
+      ["1", ""], ["2", "ABC"], ["3", "DEF"],
+      ["4", "GHI"], ["5", "JKL"], ["6", "MNO"],
+      ["7", "PQRS"], ["8", "TUV"], ["9", "WXYZ"],
+      ["*", ""], ["0", "+"], ["#", ""]
+    ];
+    keys.forEach(function (pair) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.innerHTML = '<span class="num">' + pair[0] + '</span><span class="letters">' + pair[1] + "</span>";
+      btn.addEventListener("click", function () { pressKey(pair[0]); });
+      pad.appendChild(btn);
+    });
+
+    document.getElementById("btnSend").addEventListener("click", function () { pressKey("Send"); });
+    document.getElementById("btnOk").addEventListener("click", function () { pressKey("Send"); });
+    document.getElementById("btnClr").addEventListener("click", function () { pressKey("Clr"); });
+    reply.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submit();
+      }
+    });
+
+    goIdle();
+  </script>
+</body>
+</html>
