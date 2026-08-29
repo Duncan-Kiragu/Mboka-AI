@@ -86,6 +86,11 @@
     }
     .field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff; }
     .transcript { font-size: 0.85rem; color: var(--muted); background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+    .extract-hint {
+      margin: -4px 0 12px; padding: 10px 12px;
+      border-radius: 10px; border-left: 4px solid var(--terracotta);
+      background: #fdf4ee; color: var(--ink); font-size: 0.85rem; text-align: left;
+    }
     .row-btns { display: flex; gap: 8px; margin-top: 14px; }
     .row-btns button {
       flex: 1; border: 0; border-radius: 12px; padding: 12px;
@@ -119,7 +124,15 @@
       border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff;
     }
 
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 10px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 10px; cursor: pointer; }
+    .market-link {
+      display: inline-block;
+      margin-top: 4px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--green-dark);
+      text-decoration: none;
+    }
     .card.sold { opacity: 0.62; }
     .card img { width: 100%; border-radius: 10px; margin-bottom: 8px; max-height: 180px; object-fit: cover; }
     .card .item { font-weight: 700; font-size: 1.02rem; margin-bottom: 6px; }
@@ -154,6 +167,7 @@
     <section id="confirmPanel">
       <h2>Confirm listing</h2>
       <div class="transcript" id="rawTranscript"></div>
+      <p id="extractHint" class="extract-hint" hidden></p>
       <div class="field"><label for="fieldItem">Item</label><input id="fieldItem" type="text" /></div>
       <div class="field"><label for="fieldPrice">Price (KSh)</label><input id="fieldPrice" type="text" inputmode="numeric" /></div>
       <div class="field"><label for="fieldLocation">Location</label><input id="fieldLocation" type="text" /></div>
@@ -178,8 +192,12 @@
       <button id="playBtn" type="button">Tap to play confirmation</button>
     </section>
 
+    <!-- Buyer feed markup. Full page is /feed.html (P5). -->
     <div class="feed-head">
-      <h2>Live feed</h2>
+      <div>
+        <h2>Live feed</h2>
+        <a class="market-link" href="/feed.html">Open marketplace</a>
+      </div>
       <div class="feed-tabs">
         <button type="button" id="tabAll" class="active">All</button>
         <button type="button" id="tabMine">Mine</button>
@@ -191,17 +209,22 @@
   </div>
 
   <script>
-    const FILTERS = ["all", "furniture", "clothing", "food", "services", "electronics", "other"];
+    /*
+      Confirm-panel fields come from POST /extract.
+      On failure the form still opens; fill manually or Re-record.
+    */
     const PHONE_KEY = "mboka-phone";
     const SILENCE_MS = 2000;
     const MIN_RECORD_MS = 800;
     const RMS_THRESHOLD = 0.018;
+    const CALL_GREETING = "Niambie unauza nini?";
 
     const micBtn = document.getElementById("micBtn");
     const micHint = document.getElementById("micHint");
     const statusBanner = document.getElementById("statusBanner");
     const confirmPanel = document.getElementById("confirmPanel");
     const rawTranscriptEl = document.getElementById("rawTranscript");
+    const extractHint = document.getElementById("extractHint");
     const fieldItem = document.getElementById("fieldItem");
     const fieldPrice = document.getElementById("fieldPrice");
     const fieldLocation = document.getElementById("fieldLocation");
@@ -212,12 +235,7 @@
     const confirmBtn = document.getElementById("confirmBtn");
     const rerecordBtn = document.getElementById("rerecordBtn");
     const playBtn = document.getElementById("playBtn");
-    const feedEl = document.getElementById("feed");
-    const filtersEl = document.getElementById("filters");
-    const locationFilter = document.getElementById("locationFilter");
     const myPhone = document.getElementById("myPhone");
-    const tabAll = document.getElementById("tabAll");
-    const tabMine = document.getElementById("tabMine");
 
     let mediaRecorder = null;
     let mediaStream = null;
@@ -229,10 +247,6 @@
     let analyser = null;
     let audioContext = null;
     let rafId = 0;
-    let allListings = [];
-    let activeFilter = "all";
-    let activeLocation = "all";
-    let showMine = false;
     let pendingAudioUrl = "";
     let pendingExtraNotes = "";
     let extractConversationId = "";
@@ -249,20 +263,6 @@
     function hideBanner() {
       statusBanner.className = "banner";
       statusBanner.textContent = "";
-    }
-    function samePhone(a, b) {
-      return String(a || "").replace(/\D/g, "") === String(b || "").replace(/\D/g, "") && String(a || "").replace(/\D/g, "").length >= 9;
-    }
-    function telHref(phone) {
-      const digits = String(phone || "").replace(/\D/g, "");
-      return digits ? ("tel:" + phone) : "";
-    }
-    function waHref(phone) {
-      let n = String(phone || "").replace(/\D/g, "");
-      if (!n) return "";
-      if (n.charAt(0) === "0" && n.length === 10) n = "254" + n.slice(1);
-      else if (n.length === 9) n = "254" + n;
-      return "https://wa.me/" + n;
     }
 
     function confirmationSummary(fields) {
@@ -360,8 +360,38 @@
       recording = false;
     }
 
+    function playGreeting(text) {
+      return fetch("/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text })
+      }).then(function (res) {
+        if (!res.ok) return;
+        return res.blob().then(function (blob) {
+          return new Promise(function (resolve) {
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            audio.onended = function () {
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            audio.onerror = function () {
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            const attempt = audio.play();
+            if (attempt && attempt.catch) attempt.catch(function () { resolve(); });
+          });
+        });
+      }).catch(function () {});
+    }
+
     async function startRecording() {
       hideBanner();
+      micBtn.disabled = true;
+      micHint.textContent = CALL_GREETING;
+      await playGreeting(CALL_GREETING);
+      micBtn.disabled = false;
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         showBanner("This browser cannot record audio. Try Chrome on a phone or laptop.", "error");
         return;
@@ -434,10 +464,14 @@
           return;
         }
         const audio = await blobToBase64(blob);
-        const res = await fetch("/transcribe", {
+        const res = await fetch("/call/record", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ audio: audio, mimeType: blob.type || "audio/webm" })
+          body: JSON.stringify({
+            audio: audio,
+            mimeType: blob.type || "audio/webm",
+            phoneNumber: myPhone.value.trim()
+          })
         });
         const data = await res.json().catch(function () { return {}; });
         if (!res.ok) {
@@ -449,6 +483,7 @@
           showBanner("Heard nothing we could transcribe. Try speaking a bit louder and retry.", "error");
           return;
         }
+        showBanner('Call recorded: "' + transcript + '"', "info");
         await openConfirmPanel(transcript);
       } catch (err) {
         showBanner("Transcription failed. Check your connection and retry.", "error");
@@ -467,8 +502,50 @@
         location: fieldLocation.value.trim(),
         category: fieldCategory.value || "other",
         condition: fieldCondition.value.trim(),
-        contact: fieldContact.value.trim() || myPhone.value.trim()
+        contact: fieldContact.value.trim() || myPhone.value.trim(),
+        extra_notes: pendingExtraNotes
       };
+    }
+    function blankExtracted() {
+      return { item: "", category: "other", price: "", condition: "", location: "", extra_notes: "" };
+    }
+    function normalizeExtracted(data) {
+      const price = data && data.price != null && data.price !== "" ? String(data.price) : "";
+      return {
+        item: (data && data.item) || "",
+        category: (data && data.category) || "other",
+        price: price,
+        condition: (data && data.condition) || "",
+        location: (data && data.location) || "",
+        extra_notes: (data && data.extra_notes) || ""
+      };
+    }
+    async function loadExtractedFields(transcript) {
+      try {
+        const res = await fetch("/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript: transcript })
+        });
+        if (!res.ok) return { extracted: blankExtracted(), extractFailed: true };
+        const data = await res.json();
+        return { extracted: normalizeExtracted(data), extractFailed: false };
+      } catch (e) {
+        return { extracted: blankExtracted(), extractFailed: true };
+      }
+    }
+    function showExtractHint(fields) {
+      const missing = [];
+      if (!(fields.item || "").trim()) missing.push("item");
+      if (!(fields.price || "").trim()) missing.push("price");
+      if (!(fields.location || "").trim()) missing.push("location");
+      if (!missing.length) {
+        extractHint.hidden = true;
+        extractHint.textContent = "";
+        return;
+      }
+      extractHint.hidden = false;
+      extractHint.textContent = "Missing " + missing.join(", ") + " — fill them in if you can. You can still Confirm.";
     }
     async function speakSummary(fields) {
       playBtn.classList.remove("show");
@@ -535,13 +612,20 @@
       fieldCondition.value = extracted.condition;
       fieldContact.value = myPhone.value.trim();
       fieldPhoto.value = "";
+      showExtractHint(extracted);
       confirmPanel.classList.add("show");
       confirmPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (result.extractFailed) {
+        showBanner("Could not extract — Re-record or fill the form.", "error");
+      }
       speakSummary(extracted);
     }
     function closeConfirmPanel() {
       confirmPanel.classList.remove("show");
       playBtn.classList.remove("show");
+      extractHint.hidden = true;
+      extractHint.textContent = "";
+      pendingExtraNotes = "";
       if (pendingAudioUrl) { URL.revokeObjectURL(pendingAudioUrl); pendingAudioUrl = ""; }
     }
 
@@ -580,167 +664,11 @@
         }
         closeConfirmPanel();
         showBanner("Listing posted.", "info");
-        await loadListings();
+        if (window.MbokaFeed && window.MbokaFeed.refresh) await window.MbokaFeed.refresh();
       } catch (err) {
         showBanner("Could not post the listing. Try Confirm again.", "error");
       } finally {
         confirmBtn.disabled = false;
-      }
-    }
-
-    async function markSold(id) {
-      try {
-        const res = await fetch("/listings/" + encodeURIComponent(id), {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "sold" })
-        });
-        if (!res.ok) {
-          showBanner("Could not mark as sold.", "error");
-          return;
-        }
-        await loadListings();
-      } catch (err) {
-        showBanner("Could not mark as sold.", "error");
-      }
-    }
-
-    function visibleListings() {
-      const phone = myPhone.value.trim();
-      return allListings.filter(function (l) {
-        if (showMine && !samePhone(l.contact, phone)) return false;
-        if (activeFilter !== "all" && l.category !== activeFilter) return false;
-        if (activeLocation !== "all" && l.location !== activeLocation) return false;
-        return true;
-      });
-    }
-    function renderFilters() {
-      filtersEl.innerHTML = "";
-      FILTERS.forEach(function (name) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.textContent = name;
-        if (name === activeFilter) btn.className = "active";
-        btn.addEventListener("click", function () {
-          activeFilter = name;
-          renderFilters();
-          renderFeed();
-        });
-        filtersEl.appendChild(btn);
-      });
-    }
-    function renderLocationFilter() {
-      const seen = {};
-      const names = [];
-      allListings.forEach(function (l) {
-        if (l.location && !seen[l.location]) {
-          seen[l.location] = true;
-          names.push(l.location);
-        }
-      });
-      names.sort();
-      const previous = activeLocation;
-      locationFilter.innerHTML = "";
-      const allOpt = document.createElement("option");
-      allOpt.value = "all";
-      allOpt.textContent = "All areas";
-      locationFilter.appendChild(allOpt);
-      names.forEach(function (name) {
-        const opt = document.createElement("option");
-        opt.value = name;
-        opt.textContent = name;
-        locationFilter.appendChild(opt);
-      });
-      activeLocation = names.indexOf(previous) >= 0 ? previous : "all";
-      locationFilter.value = activeLocation;
-    }
-    function renderFeed() {
-      const rows = visibleListings();
-      feedEl.innerHTML = "";
-      if (!rows.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty";
-        empty.textContent = showMine
-          ? "No listings for this phone yet. Record one above."
-          : "No listings in this filter yet.";
-        feedEl.appendChild(empty);
-        return;
-      }
-      const my = myPhone.value.trim();
-      rows.forEach(function (l) {
-        const card = document.createElement("article");
-        card.className = "card" + (l.status === "sold" ? " sold" : "");
-        if (l.photo_url) {
-          const img = document.createElement("img");
-          img.src = l.photo_url;
-          img.alt = "";
-          card.appendChild(img);
-        }
-        const item = document.createElement("div");
-        item.className = "item";
-        item.textContent = l.item || "Untitled";
-        card.appendChild(item);
-        const meta = document.createElement("div");
-        meta.className = "meta";
-        const price = document.createElement("span");
-        price.textContent = l.price ? ("KSh " + l.price) : "Price not set";
-        const loc = document.createElement("span");
-        loc.textContent = l.location || "Location not set";
-        const pill = document.createElement("span");
-        pill.className = "pill";
-        pill.textContent = l.category || "other";
-        meta.appendChild(price);
-        meta.appendChild(loc);
-        meta.appendChild(pill);
-        if (l.condition) {
-          const cond = document.createElement("span");
-          cond.textContent = l.condition;
-          meta.appendChild(cond);
-        }
-        if (l.status === "sold") {
-          const sold = document.createElement("span");
-          sold.className = "pill";
-          sold.textContent = "sold";
-          meta.appendChild(sold);
-        }
-        card.appendChild(meta);
-        const contacts = document.createElement("div");
-        contacts.className = "contacts";
-        const call = telHref(l.contact);
-        const wa = waHref(l.contact);
-        if (call) {
-          const a = document.createElement("a");
-          a.href = call;
-          a.textContent = "Call";
-          contacts.appendChild(a);
-        }
-        if (wa) {
-          const a = document.createElement("a");
-          a.href = wa;
-          a.target = "_blank";
-          a.rel = "noopener";
-          a.textContent = "WhatsApp";
-          contacts.appendChild(a);
-        }
-        if (samePhone(l.contact, my) && l.status === "active") {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.textContent = "Mark sold";
-          btn.addEventListener("click", function () { markSold(l.id); });
-          contacts.appendChild(btn);
-        }
-        if (contacts.childNodes.length) card.appendChild(contacts);
-        feedEl.appendChild(card);
-      });
-    }
-    async function loadListings() {
-      try {
-        const res = await fetch("/listings");
-        allListings = await res.json();
-        renderLocationFilter();
-        renderFeed();
-      } catch (err) {
-        feedEl.innerHTML = '<div class="empty">Could not load the feed.</div>';
       }
     }
 
@@ -758,31 +686,7 @@
       if (!pendingAudioUrl) return;
       new Audio(pendingAudioUrl).play().catch(function () {});
     });
-    locationFilter.addEventListener("change", function () {
-      activeLocation = locationFilter.value;
-      renderFeed();
-    });
-    tabAll.addEventListener("click", function () {
-      showMine = false;
-      tabAll.className = "active";
-      tabMine.className = "";
-      renderFeed();
-    });
-    tabMine.addEventListener("click", function () {
-      showMine = true;
-      tabMine.className = "active";
-      tabAll.className = "";
-      if (!myPhone.value.trim()) {
-        showBanner("Enter your phone above, then open Mine.", "error");
-      }
-      renderFeed();
-    });
-    myPhone.addEventListener("input", function () {
-      if (showMine) renderFeed();
-    });
-
-    renderFilters();
-    loadListings();
   </script>
+  <script src="/feed.js"></script>
 </body>
 </html>
