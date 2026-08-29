@@ -136,6 +136,7 @@ app.post("/extract", async (req: Request, res: Response) => {
       trace: {
         has_key: false,
         model: "",
+        workspace_id: "",
         transcript_chars: transcript.length,
         llm_attempted: false,
         llm_calls: 0,
