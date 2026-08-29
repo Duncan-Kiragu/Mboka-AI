@@ -525,10 +525,16 @@
         const res = await fetch("/extract", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: transcript })
+          body: JSON.stringify({
+            transcript: transcript,
+            conversation_id: extractConversationId
+          })
         });
         if (!res.ok) return { extracted: blankExtracted(), extractFailed: true };
         const data = await res.json();
+        if (typeof data.conversation_id === "string" && data.conversation_id.trim()) {
+          extractConversationId = data.conversation_id.trim();
+        }
         return { extracted: normalizeExtracted(data), extractFailed: false };
       } catch (e) {
         return { extracted: blankExtracted(), extractFailed: true };
@@ -574,35 +580,8 @@
     }
     async function openConfirmPanel(transcript) {
       hideBanner();
-      extractConversationId = "";
-      let extracted = {
-        item: "",
-        price: "",
-        location: "",
-        category: "",
-        condition: "",
-        extra_notes: ""
-      };
-      try {
-        const res = await fetch("/extract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transcript: transcript,
-            conversation_id: extractConversationId
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          extracted.item = data.item || "";
-          extracted.price = data.price === 0 || data.price ? data.price : "";
-          extracted.location = data.location || "";
-          extracted.category = data.category || "";
-          extracted.condition = data.condition || "";
-          extracted.extra_notes = data.extra_notes || "";
-          if (data.conversation_id) extractConversationId = data.conversation_id;
-        }
-      } catch (err) {}
+      const result = await loadExtractedFields(transcript);
+      const extracted = result.extracted;
       pendingExtraNotes = extracted.extra_notes || "";
       rawTranscriptEl.textContent = 'Heard: "' + transcript + '"';
       fieldItem.value = extracted.item;
@@ -662,6 +641,7 @@
           showBanner("Could not post the listing. Try Confirm again.", "error");
           return;
         }
+        extractConversationId = "";
         closeConfirmPanel();
         showBanner("Listing posted.", "info");
         if (window.MbokaFeed && window.MbokaFeed.refresh) await window.MbokaFeed.refresh();
