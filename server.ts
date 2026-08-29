@@ -94,6 +94,17 @@ app.post("/extract", async (req: Request, res: Response) => {
     const result = await extractFromTranscript(transcript, {
       conversationId,
     });
+    console.log(
+      JSON.stringify({
+        tag: "extract",
+        event: "http",
+        conversation_id: result.conversation_id,
+        source: result.source,
+        llm_attempted: result.trace.llm_attempted,
+        llm_calls: result.trace.llm_calls,
+        fallback_reason: result.trace.fallback_reason,
+      })
+    );
     res.json(result);
   } catch (err) {
     console.error("POST /extract", err);
@@ -101,6 +112,15 @@ app.post("/extract", async (req: Request, res: Response) => {
       ...extractWithRegex(transcript),
       conversation_id: conversationId,
       source: "regex",
+      trace: {
+        has_key: false,
+        model: "",
+        transcript_chars: transcript.length,
+        llm_attempted: false,
+        llm_calls: 0,
+        fallback_reason: "route_threw",
+        calls: [],
+      },
     });
   }
 });
