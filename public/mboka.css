@@ -351,6 +351,8 @@ html.is-static #field { display: none; }
   border-left-color: transparent;
 }
 #hero #micBtn .mic-word {
+  position: relative;
+  z-index: 1;
   font-family: var(--display);
   font-size: 1.15rem;
   letter-spacing: 0.08em;
@@ -767,6 +769,14 @@ html.is-static #field { display: none; }
 .card .meta {
   color: var(--muted-2);
   font-size: var(--t1);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.card .meta .meta-sep {
+  color: var(--muted-2);
+  user-select: none;
 }
 
 .photo-ph {

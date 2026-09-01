@@ -78,6 +78,13 @@
       font-size: var(--t2);
     }
     .row .missing { color: var(--voice-deep); font-style: italic; }
+    .row.ask {
+      background: rgba(226, 74, 22, 0.12);
+      outline: 2px solid var(--voice);
+      margin: 0 -8px;
+      padding-left: 8px;
+      padding-right: 8px;
+    }
     .gaps { margin: 12px 0 0; font-size: var(--t1); color: var(--muted-2); }
     .posted {
       display: none;
@@ -170,10 +177,11 @@
       <div class="board-grid">
         <div class="ledger" id="ledger">
           <h2>Risiti ya soko</h2>
-          <div class="row"><span>Kitu</span><span id="fItem" class="missing">—</span></div>
-          <div class="row"><span>Bei</span><span id="fPrice" class="missing">—</span></div>
-          <div class="row"><span>Mahali</span><span id="fLocation" class="missing">—</span></div>
-          <div class="row"><span>Aina</span><span id="fCategory" class="missing">—</span></div>
+          <div class="row" id="rowItem"><span>Kitu</span><span id="fItem" class="missing">—</span></div>
+          <div class="row" id="rowPrice"><span>Bei</span><span id="fPrice" class="missing">—</span></div>
+          <div class="row" id="rowLocation"><span>Mahali</span><span id="fLocation" class="missing">—</span></div>
+          <div class="row" id="rowContact"><span>Simu</span><span id="fContact" class="missing">—</span></div>
+          <div class="row" id="rowCategory"><span>Aina</span><span id="fCategory" class="missing">—</span></div>
           <div class="row"><span>Maelezo</span><span id="fNotes" class="missing">—</span></div>
           <p class="gaps" id="gaps"></p>
           <div class="posted" id="posted">
@@ -207,7 +215,8 @@
       confirm: "Thibitisha · confirm",
       done: "Imeisha · done"
     };
-    const SLOT_SW = { item: "kitu", price: "bei", location: "mahali" };
+    const SLOT_SW = { item: "kitu", price: "bei", location: "mahali", contact: "simu" };
+    const ROW_IDS = { item: "rowItem", price: "rowPrice", location: "rowLocation", contact: "rowContact" };
 
     function setField(el, value, prefix) {
       if (value === "" || value === null || value === undefined) {
@@ -240,8 +249,17 @@
       setField(document.getElementById("fLocation"), fields.location);
       setField(document.getElementById("fCategory"), fields.category);
       setField(document.getElementById("fNotes"), fields.extra_notes);
+      setField(document.getElementById("fContact"), data.phoneNumber);
 
-      const missing = Array.isArray(data.missing) ? data.missing : [];
+      const ask = data.ask || "";
+      Object.keys(ROW_IDS).forEach(function (slot) {
+        const row = document.getElementById(ROW_IDS[slot]);
+        if (!row) return;
+        row.className = "row" + (ask === slot ? " ask" : "");
+      });
+
+      const missing = Array.isArray(data.missing) ? data.missing.slice() : [];
+      if (data.needPhone && missing.indexOf("contact") < 0) missing.push("contact");
       gapsEl.textContent = missing.length
         ? "Bado: " + missing.map(function (s) { return SLOT_SW[s] || s; }).join(", ")
         : "Sehemu zote zimejaa.";

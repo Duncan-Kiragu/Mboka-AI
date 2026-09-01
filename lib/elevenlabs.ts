@@ -7,8 +7,15 @@
  */
 
 const STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
-const VOICE_ID = "JBFqnCBsd6RMkjVDRZzb";
-const TTS_URL = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
+const DEFAULT_VOICE_ID = "ijKilL5CnjXKMWDHOJH8";
+
+function voiceId(): string {
+  return process.env.ELEVENLABS_VOICE_ID?.trim() || DEFAULT_VOICE_ID;
+}
+
+function ttsUrl(): string {
+  return `https://api.elevenlabs.io/v1/text-to-speech/${voiceId()}`;
+}
 
 const STT_MODEL = "scribe_v2";
 
@@ -94,7 +101,7 @@ export async function speak(text: string): Promise<Buffer> {
   }
 
   for (const attempt of TTS_ATTEMPTS) {
-    const res = await fetch(TTS_URL, {
+    const res = await fetch(ttsUrl(), {
       method: "POST",
       headers: {
         "xi-api-key": apiKey,

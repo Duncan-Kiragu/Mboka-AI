@@ -44,7 +44,7 @@
       <div class="mic-wrap">
         <button id="micBtn" type="button" aria-label="Sema listing yako">
           <span class="mic-orb" aria-hidden="true"></span>
-          <span class="mic-word"></span>
+          <span class="mic-word">Sema</span>
         </button>
       </div>
       <div class="hero-meta">
@@ -216,6 +216,10 @@
     function setHint(sw, en) {
       micHint.innerHTML =
         '<span class="sw">' + sw + '</span><span class="en">' + (en || "") + "</span>";
+    }
+    function setMicLabel(word, aria) {
+      if (micWord) micWord.textContent = word;
+      micBtn.setAttribute("aria-label", aria || word);
     }
 
     function showBanner(message, type) {
@@ -397,7 +401,7 @@
       recording = true;
       startedAt = Date.now();
       micBtn.classList.add("recording");
-      if (micWord) micWord.textContent = "Simama";
+      setMicLabel("Simama", "Simama kurekodi");
       recTime.hidden = false;
       tickClock();
       clockTimer = setInterval(tickClock, 250);
@@ -420,6 +424,7 @@
     async function sendForTranscription(blob) {
       transcribing = true;
       micBtn.disabled = true;
+      setMicLabel("…", "Tunatafsiri sauti");
       setHint("Tunatafsiri sauti…", "Transcribing…");
       try {
         if (!blob.size) {
@@ -461,7 +466,7 @@
         micBtn.disabled = false;
         setHint("Gusa, kisha sema", "Tap to record · tap again to stop");
         micBtn.classList.remove("recording");
-        if (micWord) micWord.textContent = "Sema";
+        setMicLabel("Sema", "Sema listing yako");
         recTime.hidden = true;
       }
     }

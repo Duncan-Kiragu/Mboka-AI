@@ -349,20 +349,28 @@
       var pillEl = document.createElement("span");
       pillEl.className = "pill";
       pillEl.textContent = listing.category || "other";
-      metaEl.appendChild(priceEl);
-      metaEl.appendChild(locEl);
-      metaEl.appendChild(pillEl);
+      var metaParts = [priceEl, locEl, pillEl];
       if (listing.condition) {
         var cond = document.createElement("span");
         cond.textContent = listing.condition;
-        metaEl.appendChild(cond);
+        metaParts.push(cond);
       }
       if (listing.status === "sold") {
         var soldEl = document.createElement("span");
         soldEl.className = "pill";
         soldEl.textContent = "sold";
-        metaEl.appendChild(soldEl);
+        metaParts.push(soldEl);
       }
+      metaParts.forEach(function (el, i) {
+        if (i) {
+          var sep = document.createElement("span");
+          sep.className = "meta-sep";
+          sep.setAttribute("aria-hidden", "true");
+          sep.textContent = "·";
+          metaEl.appendChild(sep);
+        }
+        metaEl.appendChild(el);
+      });
       card.appendChild(metaEl);
       var compactFoot = document.createElement("div");
       compactFoot.className = "card-foot";

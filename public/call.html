@@ -80,7 +80,34 @@
     }
     .fields h2 { margin: 0 0 10px; font-family: var(--display); text-transform: uppercase; }
     .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+    .row.ask {
+      background: rgba(226, 74, 22, 0.12);
+      outline: 2px solid var(--voice);
+      margin: 0 -8px;
+      padding-left: 8px;
+      padding-right: 8px;
+    }
     .row .missing { color: var(--voice-deep); font-style: italic; }
+    .gaps { margin: 10px 0 0; font-size: var(--t1); color: var(--muted-2); }
+    .type-row { display: flex; gap: 8px; margin-top: 14px; }
+    .type-row input {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      border-bottom: 2px solid var(--gold);
+      background: transparent;
+      color: var(--paper);
+      padding: 8px 0;
+      outline: none;
+    }
+    .type-row button {
+      border: 2px solid var(--gold);
+      background: transparent;
+      color: var(--paper);
+      font-weight: 700;
+      padding: 8px 14px;
+    }
+    .type-row button:disabled { opacity: 0.45; }
     .actions { display: none; gap: 16px; margin-top: 14px; justify-content: space-between; }
     .actions.show { display: flex; }
     .actions button { font-family: var(--display); letter-spacing: 0.06em; text-transform: uppercase; border: 0; padding: 14px 18px; }
@@ -127,8 +154,8 @@
   <div class="call-page">
     <h1 class="display">Simu</h1>
     <p class="lede-block">
-      <span class="sw">Sio line ya kweli. Gonga, nena — swali moja moja, kisha listing iyo hiyo.</span>
-      <span class="en">Tap-to-record stands in for an inbound call. Same extract, same feed.</span>
+      <span class="sw">Sio line ya kweli. Gonga au andika — swali moja hadi kitu, bei, mahali, na namba vimejaa.</span>
+      <span class="en">Tap-to-record stands in for an inbound call. It asks until item, price, place, and phone are in.</span>
     </p>
 
     <div class="phone-bar">
@@ -152,6 +179,11 @@
       <button id="noBtn">Hapana</button>
     </div>
 
+    <div class="type-row" id="typeRow">
+      <input id="typeAnswer" type="text" autocomplete="off" placeholder="Au andika jibu hapa" />
+      <button id="typeSend" type="button">Tuma</button>
+    </div>
+
     <div class="banner" id="banner"></div>
 
     <div class="done" id="done">
@@ -160,18 +192,34 @@
       <p style="margin:10px 0 0"><a href="/feed.html">Angalia kwenye feed &rarr;</a></p>
     </div>
 
-    <div class="fields" id="fieldsBox" style="display:none">
+    <div class="fields" id="fieldsBox">
       <h2>Tumesikia hadi sasa</h2>
-      <div class="row"><span>Kitu</span><span id="fItem" class="missing">—</span></div>
-      <div class="row"><span>Bei</span><span id="fPrice" class="missing">—</span></div>
-      <div class="row"><span>Mahali</span><span id="fLocation" class="missing">—</span></div>
-      <div class="row"><span>Aina</span><span id="fCategory" class="missing">—</span></div>
+      <div class="row ask" id="rowItem"><span>Kitu</span><span id="fItem" class="missing">—</span></div>
+      <div class="row" id="rowPrice"><span>Bei</span><span id="fPrice" class="missing">—</span></div>
+      <div class="row" id="rowLocation"><span>Mahali</span><span id="fLocation" class="missing">—</span></div>
+      <div class="row" id="rowContact"><span>Simu</span><span id="fContact" class="missing">—</span></div>
+      <div class="row" id="rowCategory"><span>Aina</span><span id="fCategory" class="missing">—</span></div>
+      <p class="gaps" id="gaps">Bado: kitu, bei, mahali, simu</p>
     </div>
 
     <div class="log" id="log"></div>
   </div>
 
   <script>
+    const PHONE_KEY = "mboka-phone";
+    const SILENCE_MS = 2000;
+    const MIN_RECORD_MS = 800;
+    const RMS_THRESHOLD = 0.018;
+    const SLOT_SW = { item: "kitu", price: "bei", location: "mahali", contact: "simu" };
+    const ROW_IDS = { item: "rowItem", price: "rowPrice", location: "rowLocation", contact: "rowContact" };
+    const TYPE_HINT = {
+      item: "Andika kitu unachouza",
+      price: "Andika bei, e.g. 5000",
+      location: "Andika mahali, e.g. Kawangware",
+      contact: "Andika namba, e.g. 0712345678",
+      confirm: "Andika ndio au hapana"
+    };
+
     const micBtn = document.getElementById("micBtn");
     const micHint = document.getElementById("micHint");
     const myPhone = document.getElementById("myPhone");
@@ -185,18 +233,33 @@
     const doneBox = document.getElementById("done");
     const doneText = document.getElementById("doneText");
     const fieldsBox = document.getElementById("fieldsBox");
+    const gapsEl = document.getElementById("gaps");
+    const typeAnswer = document.getElementById("typeAnswer");
+    const typeSend = document.getElementById("typeSend");
     const log = document.getElementById("log");
 
     const OPENING = "Karibu Mboka. Unauza nini?";
 
     let sessionId = "";
     let mode = "idle";
+    let currentAsk = "item";
+    let capturedPhone = "";
+    let lastFields = {};
+    let lastMissing = ["item", "price", "location"];
     let recording = false;
     let busy = false;
     let mediaRecorder = null;
     let mediaStream = null;
     let chunks = [];
     let lastSay = "";
+    let startedAt = 0;
+    let silenceTimer = null;
+    let analyser = null;
+    let audioContext = null;
+    let rafId = 0;
+
+    myPhone.value = localStorage.getItem(PHONE_KEY) || "";
+    capturedPhone = myPhone.value.trim();
 
     function showBanner(text, kind) {
       banner.textContent = text;
@@ -223,13 +286,40 @@
       el.className = "";
     }
 
-    function renderFields(fields) {
-      if (!fields) return;
-      fieldsBox.style.display = "block";
+    function highlightAsk(ask) {
+      Object.keys(ROW_IDS).forEach(function (slot) {
+        const row = document.getElementById(ROW_IDS[slot]);
+        if (!row) return;
+        row.className = "row" + (ask === slot ? " ask" : "");
+      });
+    }
+
+    function renderGaps(missing, needPhone, ask) {
+      if (Array.isArray(missing)) lastMissing = missing;
+      const bits = lastMissing.map(function (s) {
+        return SLOT_SW[s] || s;
+      });
+      if (needPhone && bits.indexOf("simu") < 0) bits.push("simu");
+      gapsEl.textContent = bits.length ? "Bado: " + bits.join(", ") : "Sehemu zote zimejaa.";
+      typeAnswer.placeholder = TYPE_HINT[ask] || "Au andika jibu hapa";
+    }
+
+    function renderFields(fields, missing, needPhone, ask) {
+      fields = fields || lastFields || {};
+      lastFields = fields;
       setField(document.getElementById("fItem"), fields.item);
-      setField(document.getElementById("fPrice"), fields.price === "" ? "" : "KSh " + fields.price);
+      setField(document.getElementById("fPrice"), fields.price === "" || fields.price == null ? "" : "KSh " + fields.price);
       setField(document.getElementById("fLocation"), fields.location);
       setField(document.getElementById("fCategory"), fields.category);
+      const phone = capturedPhone || myPhone.value.trim();
+      setField(document.getElementById("fContact"), phone);
+      if (!phone) {
+        const el = document.getElementById("fContact");
+        el.textContent = "—";
+        el.className = "missing";
+      }
+      highlightAsk(ask || currentAsk);
+      renderGaps(missing, needPhone !== false && !phone, ask || currentAsk);
     }
 
     function pickMimeType() {
@@ -271,17 +361,53 @@
       } catch (e) { /* silent — the caller still sees the line */ }
     }
 
+    function rmsFromAnalyser() {
+      if (!analyser) return 0;
+      const data = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      return Math.sqrt(sum / data.length);
+    }
+
+    function watchSilence() {
+      const rms = rmsFromAnalyser();
+      if (Date.now() - startedAt < MIN_RECORD_MS) {
+        rafId = requestAnimationFrame(watchSilence);
+        return;
+      }
+      if (rms < RMS_THRESHOLD) {
+        if (!silenceTimer) {
+          silenceTimer = setTimeout(function () { if (recording) stopRecording(); }, SILENCE_MS);
+        }
+      } else if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+      }
+      if (recording) rafId = requestAnimationFrame(watchSilence);
+    }
+
     function cleanupStream() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = 0;
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = null;
       if (mediaStream) {
         mediaStream.getTracks().forEach(function (t) { t.stop(); });
         mediaStream = null;
       }
+      if (audioContext) { audioContext.close().catch(function () {}); audioContext = null; }
+      analyser = null;
     }
 
     async function startRecording() {
       hideBanner();
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showBanner("This browser cannot record audio. Try Chrome on a phone or laptop.", "error");
+        showBanner("This browser cannot record audio. Type your answer below instead.", "error");
+        typeAnswer.focus();
         return;
       }
       try {
@@ -292,10 +418,11 @@
         const denied = err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
         showBanner(
           denied
-            ? "Microphone permission denied. Allow the mic in your browser settings, then tap again."
-            : "Could not open the microphone. Check that no other app is using it.",
+            ? "Microphone permission denied. Allow the mic, or type the answer below."
+            : "Could not open the microphone. Type the answer below instead.",
           "error"
         );
+        typeAnswer.focus();
         return;
       }
       chunks = [];
@@ -306,7 +433,7 @@
           : new MediaRecorder(mediaStream);
       } catch (err) {
         cleanupStream();
-        showBanner("Could not start the recorder in this browser.", "error");
+        showBanner("Could not start the recorder. Type the answer below instead.", "error");
         return;
       }
       mediaRecorder.ondataavailable = function (e) {
@@ -316,12 +443,21 @@
         const type = (mediaRecorder && mediaRecorder.mimeType) || mime || "audio/webm";
         const blob = new Blob(chunks, { type: type });
         cleanupStream();
-        sendTurn(blob);
+        sendTurn({ audioBlob: blob });
       };
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+      } catch (e) { analyser = null; }
       mediaRecorder.start(200);
       recording = true;
+      startedAt = Date.now();
       micBtn.classList.add("recording");
-      micHint.textContent = "Inasikiliza… gonga kusimamisha";
+      micHint.textContent = "Inasikiliza… gonga kusimamisha, au nyamaza ~2s";
+      if (analyser) rafId = requestAnimationFrame(watchSilence);
     }
 
     function stopRecording() {
@@ -336,11 +472,25 @@
       }
     }
 
+    function setBusy(on) {
+      busy = on;
+      typeSend.disabled = on || mode === "done";
+      typeAnswer.disabled = on || mode === "done";
+      if (mode !== "done") micBtn.disabled = on;
+    }
+
     /** Apply whatever the server told us to say next. */
     async function applyPrompt(data) {
       mode = data.mode || "question";
       lastSay = data.say || "";
-      renderFields(data.fields);
+      currentAsk = data.ask || "";
+      if (data.phoneNumber) {
+        capturedPhone = data.phoneNumber;
+        if (!myPhone.value.trim()) myPhone.value = data.phoneNumber;
+      } else if (data.needPhone === false && myPhone.value.trim()) {
+        capturedPhone = myPhone.value.trim();
+      }
+      renderFields(data.fields, data.missing, data.needPhone, data.ask);
 
       if (lastSay) {
         promptBox.style.display = "block";
@@ -357,9 +507,14 @@
           ? listing.item + " — KSh " + (listing.price === null ? "?" : listing.price) + " — " + listing.location
           : "";
         micBtn.disabled = true;
+        typeSend.disabled = true;
+        typeAnswer.disabled = true;
         micHint.textContent = "Simu imeisha";
+        highlightAsk("");
       } else {
-        micHint.textContent = "Gonga ujibu";
+        micHint.textContent = currentAsk === "contact"
+          ? "Sema au andika namba yako"
+          : "Gonga ujibu, au andika chini";
       }
 
       await speak(lastSay);
@@ -375,43 +530,50 @@
       return { ok: res.ok, data: data };
     }
 
-    /** First turn opens the session with P6's /call/record, later turns go to /call/answer. */
-    async function sendTurn(blob) {
-      busy = true;
-      micBtn.disabled = true;
+    function pinSession(id) {
+      var hint = document.getElementById("sessionHint");
+      if (hint && id) {
+        hint.className = "session-hint show";
+        hint.textContent = "";
+        var pin = document.createElement("a");
+        pin.href = "/board.html?sessionId=" + encodeURIComponent(id);
+        pin.textContent = "Jukwaa · " + id;
+        hint.appendChild(document.createTextNode("Skrini kubwa: "));
+        hint.appendChild(pin);
+      }
+    }
+
+    async function sendTurn(payload) {
+      setBusy(true);
       micHint.textContent = "Inasikia…";
       try {
-        if (!blob.size) {
-          showBanner("Recording was empty. Tap the mic and speak, then stop.", "error");
-          return;
+        const phoneNumber = myPhone.value.trim();
+        if (phoneNumber) {
+          localStorage.setItem(PHONE_KEY, phoneNumber);
+          capturedPhone = phoneNumber;
         }
-        const audio = await blobToBase64(blob);
-        const mimeType = blob.type || "audio/webm";
 
         if (!sessionId) {
-          const started = await postJSON("/call/record", {
-            audio: audio,
-            mimeType: mimeType,
-            phoneNumber: myPhone.value.trim()
-          });
+          const body = { phoneNumber: phoneNumber };
+          if (payload.text) body.text = payload.text;
+          if (payload.audioBlob) {
+            if (!payload.audioBlob.size) {
+              showBanner("Recording was empty. Tap the mic and speak, or type below.", "error");
+              return;
+            }
+            body.audio = await blobToBase64(payload.audioBlob);
+            body.mimeType = payload.audioBlob.type || "audio/webm";
+          }
+          const started = await postJSON("/call/record", body);
           if (!started.ok) {
-            showBanner(started.data.error || "Transcription failed. Try again.", "error");
+            showBanner(started.data.error || "Could not start the call. Try again.", "error");
             return;
           }
           sessionId = started.data.sessionId;
-          var hint = document.getElementById("sessionHint");
-          if (hint && sessionId) {
-            hint.className = "session-hint show";
-            hint.textContent = "";
-            var pin = document.createElement("a");
-            pin.href = "/board.html?sessionId=" + encodeURIComponent(sessionId);
-            pin.textContent = "Jukwaa · " + sessionId;
-            hint.appendChild(document.createTextNode("Skrini kubwa: "));
-            hint.appendChild(pin);
-          }
-          addTurn("Wewe", started.data.transcript || "");
+          pinSession(sessionId);
+          addTurn("Wewe", started.data.transcript || payload.text || "");
 
-          const next = await postJSON("/call/next", { sessionId: sessionId });
+          const next = await postJSON("/call/next", { sessionId: sessionId, phoneNumber: phoneNumber });
           if (!next.ok) {
             showBanner(next.data.error || "Something went wrong. Try again.", "error");
             return;
@@ -420,13 +582,19 @@
           return;
         }
 
-        const turn = await postJSON("/call/answer", {
-          sessionId: sessionId,
-          audio: audio,
-          mimeType: mimeType
-        });
+        const turnBody = { sessionId: sessionId, phoneNumber: phoneNumber };
+        if (payload.text) turnBody.text = payload.text;
+        if (payload.audioBlob) {
+          if (!payload.audioBlob.size) {
+            showBanner("Recording was empty. Tap the mic and speak, or type below.", "error");
+            return;
+          }
+          turnBody.audio = await blobToBase64(payload.audioBlob);
+          turnBody.mimeType = payload.audioBlob.type || "audio/webm";
+        }
+        const turn = await postJSON("/call/answer", turnBody);
         if (!turn.ok) {
-          showBanner(turn.data.error || "Transcription failed. Try answering again.", "error");
+          showBanner(turn.data.error || "Could not hear that. Try answering again.", "error");
           return;
         }
         if (turn.data.transcript) addTurn("Wewe", turn.data.transcript);
@@ -434,19 +602,34 @@
       } catch (err) {
         showBanner("Network problem. Check your connection and retry.", "error");
       } finally {
-        busy = false;
-        if (mode !== "done") micBtn.disabled = false;
+        setBusy(false);
         micBtn.classList.remove("recording");
       }
+    }
+
+    async function sendTyped() {
+      if (busy || mode === "done") return;
+      const text = typeAnswer.value.trim();
+      if (!text) {
+        showBanner("Andika jibu, au gonga Nena.", "info");
+        return;
+      }
+      typeAnswer.value = "";
+      hideBanner();
+      await sendTurn({ text: text });
     }
 
     /** Tap fallback for the yes/no, in case STT mishears the confirmation. */
     async function tapConfirm(agree) {
       if (!sessionId || busy) return;
-      busy = true;
+      setBusy(true);
       actions.className = "actions";
       try {
-        const res = await postJSON("/call/confirm", { sessionId: sessionId, agree: agree });
+        const res = await postJSON("/call/confirm", {
+          sessionId: sessionId,
+          agree: agree,
+          phoneNumber: myPhone.value.trim()
+        });
         if (!res.ok) {
           showBanner(res.data.error || "Could not confirm. Try again.", "error");
           return;
@@ -454,7 +637,7 @@
         addTurn("Wewe", agree ? "Ndio" : "Hapana");
         await applyPrompt(res.data);
       } finally {
-        busy = false;
+        setBusy(false);
       }
     }
 
@@ -466,10 +649,25 @@
     replayBtn.addEventListener("click", function () { speak(lastSay); });
     yesBtn.addEventListener("click", function () { tapConfirm(true); });
     noBtn.addEventListener("click", function () { tapConfirm(false); });
+    typeSend.addEventListener("click", sendTyped);
+    typeAnswer.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendTyped();
+      }
+    });
+    myPhone.addEventListener("change", function () {
+      const v = myPhone.value.trim();
+      if (v) localStorage.setItem(PHONE_KEY, v);
+      capturedPhone = v;
+      renderFields(lastFields, lastMissing, !v, currentAsk);
+    });
 
     promptBox.style.display = "block";
     promptSay.textContent = OPENING;
     lastSay = OPENING;
+    renderFields({}, ["item", "price", "location"], !myPhone.value.trim(), "item");
+    speak(OPENING);
   </script>
 </body>
 </html>

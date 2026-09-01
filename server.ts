@@ -10,9 +10,9 @@
  *   POST /extract           { transcript, conversation_id? }
  *   POST /transcribe        { audio, mimeType } → { transcript }
  *   POST /speak             { text } → audio/mpeg
- *   POST /call/record       tap-to-record audio → STT → log transcript
- *   POST /call/next         { sessionId } → next spoken prompt
- *   POST /call/answer       { sessionId, audio } → one dialogue turn
+ *   POST /call/record       audio or { text } → STT → session
+ *   POST /call/next         { sessionId, phoneNumber? } → next spoken prompt
+ *   POST /call/answer       { sessionId, audio | text } → one dialogue turn
  *   POST /call/confirm      { sessionId, agree } → write the listing
  *
  * Storage is an in-memory array (resets on every Render sleep/redeploy).

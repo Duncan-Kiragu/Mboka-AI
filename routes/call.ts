@@ -68,11 +68,34 @@ async function transcribeAudioBuffer(buffer: Buffer, mimeType: string): Promise<
   return parsed.text ?? "";
 }
 
+function readTypedAnswer(req: Request): string {
+  return typeof req.body?.text === "string" ? req.body.text.trim() : "";
+}
+
+/**
+ * Demo heuristic for spoken or typed numbers — not a numbering-plan spec.
+ * Accepts 07xxxxxxxx / 01xxxxxxxx, 7xxxxxxxx / 1xxxxxxxx, and 2547/2541.
+ */
+function normalizePhone(text: string): string {
+  const digits = text.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("254")) return "0" + digits.slice(3);
+  if (digits.length === 10 && (digits.startsWith("07") || digits.startsWith("01"))) return digits;
+  if (digits.length === 9 && (digits.startsWith("7") || digits.startsWith("1"))) return "0" + digits;
+  return "";
+}
+
+function applyPhone(session: CallSession, req: Request): void {
+  const raw = typeof req.body?.phoneNumber === "string" ? req.body.phoneNumber.trim() : "";
+  if (!raw) return;
+  session.phoneNumber = normalizePhone(raw) || raw;
+}
+
 export const callRouter = Router();
 
 /** Web recorder posts here after the user speaks (tap-to-record simulates a call). */
 callRouter.post("/call/record", async (req: Request, res: Response) => {
   try {
+    const typed = readTypedAnswer(req);
     const audioB64 = typeof req.body?.audio === "string" ? req.body.audio : "";
     const mimeType =
       typeof req.body?.mimeType === "string" && req.body.mimeType
@@ -81,18 +104,25 @@ callRouter.post("/call/record", async (req: Request, res: Response) => {
     const phoneNumber =
       typeof req.body?.phoneNumber === "string" ? req.body.phoneNumber.trim() : "";
 
-    if (!audioB64) {
+    if (!audioB64 && !typed) {
       res.status(400).json({ error: "No audio received. Record again and retry." });
       return;
     }
 
-    const buffer = Buffer.from(audioB64, "base64");
-    if (!buffer.length) {
-      res.status(400).json({ error: "Audio was empty. Record again and retry." });
-      return;
+    let transcript = typed;
+    let audio_url = "";
+    if (audioB64) {
+      const buffer = Buffer.from(audioB64, "base64");
+      if (!buffer.length && !typed) {
+        res.status(400).json({ error: "Audio was empty. Record again and retry." });
+        return;
+      }
+      if (buffer.length) {
+        transcript = (await transcribeAudioBuffer(buffer, mimeType)).trim() || typed;
+        audio_url = "data:" + mimeType + ";base64," + audioB64;
+      }
     }
 
-    const transcript = (await transcribeAudioBuffer(buffer, mimeType)).trim();
     if (!transcript) {
       res.status(400).json({ error: "Heard nothing we could transcribe. Try again." });
       return;
@@ -101,16 +131,16 @@ callRouter.post("/call/record", async (req: Request, res: Response) => {
     const sessionId = `call-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const session: CallSession = {
       sessionId,
-      phoneNumber,
+      phoneNumber: normalizePhone(phoneNumber) || phoneNumber,
       transcript,
       recordedAt: new Date().toISOString(),
-      audio_url: "data:" + mimeType + ";base64," + audioB64,
+      audio_url,
     };
     callSessions.set(sessionId, session);
 
-    console.log("[call/transcript]", { sessionId, phoneNumber, transcript });
+    console.log("[call/transcript]", { sessionId, phoneNumber: session.phoneNumber, transcript });
 
-    res.json({ sessionId, phoneNumber, transcript });
+    res.json({ sessionId, phoneNumber: session.phoneNumber, transcript });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Transcription failed.";
     console.error("POST /call/record", err);
@@ -130,9 +160,9 @@ callRouter.post("/call/record", async (req: Request, res: Response) => {
  * dialogue and the write to the store. State lives in its own map keyed
  * by sessionId so P6's CallSession shape stays untouched.
  *
- *   POST /call/next    { sessionId }                   first prompt after /call/record
- *   POST /call/answer  { sessionId, audio, mimeType }  one spoken turn
- *   POST /call/confirm { sessionId, agree }            tap fallback if yes/no STT misfires
+ *   POST /call/next    { sessionId, phoneNumber? }              first prompt after /call/record
+ *   POST /call/answer  { sessionId, audio | text, phoneNumber? } one turn
+ *   POST /call/confirm { sessionId, agree, phoneNumber? }        tap fallback if yes/no STT misfires
  *
  * Every reply carries `say` — the Swahili line the client plays through
  * POST /speak — plus the fields gathered so far.
@@ -150,7 +180,7 @@ type DialogueState = {
    */
   accumulated: string;
   fields: ExtractFields;
-  awaiting: Slot | "confirm" | "change" | "done";
+  awaiting: Slot | "contact" | "confirm" | "change" | "done";
   /** Set while re-asking a single field, so a re-extract cannot clobber the rest. */
   correcting: Slot | null;
   listingId: string;
@@ -179,6 +209,7 @@ const QUESTION: Record<Slot, string> = {
   location: "Uko wapi?",
 };
 
+const CONTACT_PROMPT = "Namba yako ni gani?";
 const CHANGE_PROMPT = "Ungependa kubadilisha nini? Sema bei, mahali, au kitu.";
 const DONE_LINE = "Asante. Bidhaa yako iko live sasa.";
 
@@ -304,6 +335,31 @@ async function reextract(state: DialogueState, opening: boolean): Promise<void> 
   if (slotFilled(merged, slot)) state.correcting = null;
 }
 
+/** If extract missed the slot we just asked, take the reply itself. */
+function fillAskedSlot(state: DialogueState, heard: string): void {
+  const slot = state.awaiting;
+  if (slot !== "item" && slot !== "price" && slot !== "location") return;
+  if (slotFilled(state.fields, slot)) return;
+  const line = heard.trim().replace(/[.,;]+$/, "");
+  if (!line) return;
+  const digitsOnly = line.replace(/[,\s]/g, "");
+  const fields = { ...state.fields };
+  if (slot === "price") {
+    const digits = line.replace(/,/g, "").match(/\d{2,7}/);
+    if (digits) {
+      const n = Number(digits[0]);
+      if (Number.isFinite(n)) fields.price = n;
+    }
+  } else if (slot === "item") {
+    if (/^\d{2,7}$/.test(digitsOnly)) return;
+    fields.item = line.replace(/^\s*(nauza|ninauza|nina|nataka kuuza)\s+/i, "").trim() || line;
+  } else {
+    if (/^\d{2,7}$/.test(digitsOnly) || /^\d{9,12}$/.test(digitsOnly)) return;
+    fields.location = line.replace(/^\s*(iko|niko|uko|mahali)\s+/i, "").trim() || line;
+  }
+  state.fields = fields;
+}
+
 /**
  * Drop one field and forget the words that produced it, so replaying the
  * accumulated transcript cannot simply refill it with the old value.
@@ -324,12 +380,15 @@ type Prompt = {
   sessionId: string;
   mode: "question" | "confirm" | "done";
   say: string;
+  ask: Slot | "contact" | "confirm" | "";
   fields: ExtractFields;
   missing: Slot[];
+  needPhone: boolean;
+  phoneNumber: string;
 };
 
 /** One question at a time — the first gap only, never a list. */
-function advance(sessionId: string, state: DialogueState): Prompt {
+function advance(sessionId: string, state: DialogueState, phoneNumber: string): Prompt {
   const missing = missingSlots(state.fields);
   if (missing.length) {
     state.awaiting = missing[0];
@@ -339,8 +398,25 @@ function advance(sessionId: string, state: DialogueState): Prompt {
       sessionId,
       mode: "question",
       say,
+      ask: missing[0],
       fields: state.fields,
       missing,
+      needPhone: !phoneNumber,
+      phoneNumber,
+    };
+  }
+  if (!phoneNumber) {
+    state.awaiting = "contact";
+    state.lastSay = CONTACT_PROMPT;
+    return {
+      sessionId,
+      mode: "question",
+      say: CONTACT_PROMPT,
+      ask: "contact",
+      fields: state.fields,
+      missing,
+      needPhone: true,
+      phoneNumber: "",
     };
   }
   state.awaiting = "confirm";
@@ -350,8 +426,11 @@ function advance(sessionId: string, state: DialogueState): Prompt {
     sessionId,
     mode: "confirm",
     say,
+    ask: "confirm",
     fields: state.fields,
     missing,
+    needPhone: false,
+    phoneNumber,
   };
 }
 
@@ -383,14 +462,17 @@ async function postListing(session: CallSession, state: DialogueState) {
   return listing;
 }
 
-function doneReply(sessionId: string, state: DialogueState, say: string) {
+function doneReply(sessionId: string, state: DialogueState, say: string, phoneNumber = "") {
   state.lastSay = say;
   return {
     sessionId,
     mode: "done" as const,
     say,
+    ask: "" as const,
     fields: state.fields,
     missing: [] as Slot[],
+    needPhone: false,
+    phoneNumber,
     listing: state.listingId ? store.get(state.listingId) : undefined,
   };
 }
@@ -405,91 +487,129 @@ function resolveSession(req: Request, res: Response): CallSession | null {
   return session;
 }
 
+async function hearCaller(req: Request, res: Response): Promise<string | null> {
+  const typed = readTypedAnswer(req);
+  const audioB64 = typeof req.body?.audio === "string" ? req.body.audio : "";
+  const mimeType =
+    typeof req.body?.mimeType === "string" && req.body.mimeType
+      ? req.body.mimeType
+      : "audio/webm";
+
+  if (audioB64) {
+    try {
+      const buffer = Buffer.from(audioB64, "base64");
+      if (!buffer.length && !typed) {
+        res.status(400).json({ error: "Audio was empty. Record again and retry." });
+        return null;
+      }
+      if (buffer.length) {
+        const heard = (await transcribeAudioBuffer(buffer, mimeType)).trim();
+        if (heard) return heard;
+      }
+    } catch (err) {
+      if (typed) return typed;
+      const message = err instanceof Error ? err.message : "Transcription failed.";
+      console.error("POST /call/answer", err);
+      const missingKey = message.includes("ELEVENLABS_API_KEY");
+      res.status(missingKey ? 500 : 502).json({
+        error: missingKey
+          ? "Server is missing ELEVENLABS_API_KEY."
+          : "Transcription failed. Try answering again.",
+      });
+      return null;
+    }
+  }
+
+  if (typed) return typed;
+  res.status(400).json({ error: "No audio received. Record again and retry." });
+  return null;
+}
+
+function questionReply(
+  session: CallSession,
+  state: DialogueState,
+  say: string,
+  ask: Slot | "contact",
+  extra?: Record<string, unknown>
+) {
+  state.lastSay = say;
+  return {
+    sessionId: session.sessionId,
+    mode: "question" as const,
+    say,
+    ask,
+    fields: state.fields,
+    missing: missingSlots(state.fields),
+    needPhone: !session.phoneNumber,
+    phoneNumber: session.phoneNumber,
+    ...extra,
+  };
+}
+
 /** First prompt after P6's /call/record — mines whatever the opening line already gave us. */
 callRouter.post("/call/next", async (req: Request, res: Response) => {
   const session = resolveSession(req, res);
   if (!session) return;
+  applyPhone(session, req);
 
   const state = dialogueFor(session);
   if (state.awaiting === "done") {
-    res.json(doneReply(session.sessionId, state, DONE_LINE));
+    res.json(doneReply(session.sessionId, state, DONE_LINE, session.phoneNumber));
     return;
   }
 
   await reextract(state, true);
-  const prompt = advance(session.sessionId, state);
-  console.log("[call/next]", { sessionId: session.sessionId, missing: prompt.missing });
+  const prompt = advance(session.sessionId, state, session.phoneNumber);
+  console.log("[call/next]", {
+    sessionId: session.sessionId,
+    missing: prompt.missing,
+    ask: prompt.ask,
+  });
   res.json(prompt);
 });
 
-/** One spoken turn: an answer to a follow-up, or the yes/no on the summary. */
+/** One turn: spoken or typed answer to a follow-up, or yes/no on the summary. */
 callRouter.post("/call/answer", async (req: Request, res: Response) => {
   const session = resolveSession(req, res);
   if (!session) return;
+  applyPhone(session, req);
 
   const state = dialogueFor(session);
   if (state.awaiting === "done") {
-    res.json(doneReply(session.sessionId, state, DONE_LINE));
+    res.json(doneReply(session.sessionId, state, DONE_LINE, session.phoneNumber));
     return;
   }
 
-  let heard = "";
-  try {
-    const audioB64 = typeof req.body?.audio === "string" ? req.body.audio : "";
-    const mimeType =
-      typeof req.body?.mimeType === "string" && req.body.mimeType
-        ? req.body.mimeType
-        : "audio/webm";
-    if (!audioB64) {
-      res.status(400).json({ error: "No audio received. Record again and retry." });
-      return;
-    }
-    const buffer = Buffer.from(audioB64, "base64");
-    if (!buffer.length) {
-      res.status(400).json({ error: "Audio was empty. Record again and retry." });
-      return;
-    }
-    heard = (await transcribeAudioBuffer(buffer, mimeType)).trim();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Transcription failed.";
-    console.error("POST /call/answer", err);
-    const missingKey = message.includes("ELEVENLABS_API_KEY");
-    res.status(missingKey ? 500 : 502).json({
-      error: missingKey
-        ? "Server is missing ELEVENLABS_API_KEY."
-        : "Transcription failed. Try answering again.",
-    });
-    return;
-  }
-
-  if (!heard) {
-    res.status(400).json({ error: "Heard nothing we could transcribe. Answer again." });
-    return;
-  }
+  const heard = await hearCaller(req, res);
+  if (heard === null) return;
 
   console.log("[call/answer]", { sessionId: session.sessionId, awaiting: state.awaiting, heard });
+
+  if (state.awaiting === "contact") {
+    const phone = normalizePhone(heard);
+    if (phone) {
+      session.phoneNumber = phone;
+      res.json({ ...advance(session.sessionId, state, session.phoneNumber), transcript: heard });
+      return;
+    }
+    res.json(
+      questionReply(session, state, `Sikuelewa. ${CONTACT_PROMPT}`, "contact", { transcript: heard })
+    );
+    return;
+  }
 
   if (state.awaiting === "change") {
     const slot = readSlotWord(heard);
     if (slot) {
       clearSlot(state, slot);
-      state.lastSay = QUESTION[slot];
-      res.json({
-        sessionId: session.sessionId,
-        mode: "question",
-        say: QUESTION[slot],
-        fields: state.fields,
-        missing: missingSlots(state.fields),
-        transcript: heard,
-      });
+      res.json(questionReply(session, state, QUESTION[slot], slot, { transcript: heard }));
       return;
     }
-    // Could not tell which field — take the whole listing from the top.
     state.fields = blankFields();
     state.accumulated = "";
     state.correcting = null;
     state.conversationId = `${state.conversationId}-again`;
-    res.json({ ...advance(session.sessionId, state), transcript: heard });
+    res.json({ ...advance(session.sessionId, state, session.phoneNumber), transcript: heard });
     return;
   }
 
@@ -497,22 +617,21 @@ callRouter.post("/call/answer", async (req: Request, res: Response) => {
     const correction = readCorrection(heard);
     if (correction) {
       clearSlot(state, correction);
-      state.lastSay = QUESTION[correction];
-      res.json({
-        sessionId: session.sessionId,
-        mode: "question",
-        say: QUESTION[correction],
-        fields: state.fields,
-        missing: missingSlots(state.fields),
-        transcript: heard,
-      });
+      res.json(questionReply(session, state, QUESTION[correction], correction, { transcript: heard }));
       return;
     }
 
     const agreement = readAgreement(heard);
     if (agreement === "yes") {
+      if (!session.phoneNumber) {
+        res.json({
+          ...advance(session.sessionId, state, session.phoneNumber),
+          transcript: heard,
+        });
+        return;
+      }
       const listing = await postListing(session, state);
-      res.json({ ...doneReply(session.sessionId, state, DONE_LINE), listing, transcript: heard });
+      res.json({ ...doneReply(session.sessionId, state, DONE_LINE, session.phoneNumber), listing, transcript: heard });
       return;
     }
     if (agreement === "no") {
@@ -520,10 +639,13 @@ callRouter.post("/call/answer", async (req: Request, res: Response) => {
       state.lastSay = CHANGE_PROMPT;
       res.json({
         sessionId: session.sessionId,
-        mode: "confirm",
+        mode: "question",
         say: CHANGE_PROMPT,
+        ask: "confirm",
         fields: state.fields,
         missing: [] as Slot[],
+        needPhone: !session.phoneNumber,
+        phoneNumber: session.phoneNumber,
         transcript: heard,
       });
       return;
@@ -534,23 +656,33 @@ callRouter.post("/call/answer", async (req: Request, res: Response) => {
       sessionId: session.sessionId,
       mode: "confirm",
       say: unclear,
+      ask: "confirm",
       fields: state.fields,
       missing: [] as Slot[],
+      needPhone: !session.phoneNumber,
+      phoneNumber: session.phoneNumber,
       transcript: heard,
     });
     return;
   }
 
-  // Still collecting: fold the answer into the running transcript and re-read it.
+  const asked = state.awaiting;
   state.accumulated = `${state.accumulated} ${heard}`.trim();
   await reextract(state, false);
-  res.json({ ...advance(session.sessionId, state), transcript: heard });
+  fillAskedSlot(state, heard);
+  const prompt = advance(session.sessionId, state, session.phoneNumber);
+  if (prompt.mode === "question" && asked === prompt.ask) {
+    prompt.say = `Sikuelewa. ${prompt.say}`;
+    state.lastSay = prompt.say;
+  }
+  res.json({ ...prompt, transcript: heard });
 });
 
 /** Tap fallback — keeps the demo alive when yes/no STT misfires. */
 callRouter.post("/call/confirm", async (req: Request, res: Response) => {
   const session = resolveSession(req, res);
   if (!session) return;
+  applyPhone(session, req);
 
   const state = dialogues.get(session.sessionId);
   if (!state) {
@@ -559,11 +691,24 @@ callRouter.post("/call/confirm", async (req: Request, res: Response) => {
   }
   state.updatedAt = Date.now();
   if (state.awaiting === "done") {
-    res.json(doneReply(session.sessionId, state, DONE_LINE));
+    res.json(doneReply(session.sessionId, state, DONE_LINE, session.phoneNumber));
     return;
   }
-  if (missingSlots(state.fields).length) {
-    res.json(advance(session.sessionId, state));
+  if (state.awaiting === "change") {
+    res.json({
+      sessionId: session.sessionId,
+      mode: "question",
+      say: CHANGE_PROMPT,
+      ask: "confirm",
+      fields: state.fields,
+      missing: [] as Slot[],
+      needPhone: !session.phoneNumber,
+      phoneNumber: session.phoneNumber,
+    });
+    return;
+  }
+  if (missingSlots(state.fields).length || !session.phoneNumber) {
+    res.json(advance(session.sessionId, state, session.phoneNumber));
     return;
   }
   if (req.body?.agree === false) {
@@ -571,16 +716,19 @@ callRouter.post("/call/confirm", async (req: Request, res: Response) => {
     state.lastSay = CHANGE_PROMPT;
     res.json({
       sessionId: session.sessionId,
-      mode: "confirm",
+      mode: "question",
       say: CHANGE_PROMPT,
+      ask: "confirm",
       fields: state.fields,
       missing: [] as Slot[],
+      needPhone: false,
+      phoneNumber: session.phoneNumber,
     });
     return;
   }
 
   const listing = await postListing(session, state);
-  res.json({ ...doneReply(session.sessionId, state, DONE_LINE), listing });
+  res.json({ ...doneReply(session.sessionId, state, DONE_LINE, session.phoneNumber), listing });
 });
 
 /* ------------------------------------------------------------------ *
@@ -631,6 +779,7 @@ function derivedSay(state: DialogueState | undefined): string {
   if (state.awaiting === "done") return DONE_LINE;
   if (state.awaiting === "change") return CHANGE_PROMPT;
   if (state.awaiting === "confirm") return summaryLine(state.fields);
+  if (state.awaiting === "contact") return CONTACT_PROMPT;
   if (state.awaiting === "item" || state.awaiting === "price" || state.awaiting === "location") {
     return QUESTION[state.awaiting];
   }
@@ -640,17 +789,30 @@ function derivedSay(state: DialogueState | undefined): string {
 function liveSnapshot(session: CallSession) {
   const state = dialogues.get(session.sessionId);
   const listing = state?.listingId ? store.get(state.listingId) : undefined;
+  const awaiting = state?.awaiting ?? "";
+  const ask =
+    awaiting === "item" ||
+    awaiting === "price" ||
+    awaiting === "location" ||
+    awaiting === "contact" ||
+    awaiting === "confirm"
+      ? awaiting
+      : awaiting === "change"
+        ? "confirm"
+        : "";
   return {
     active: true as const,
     sessionId: session.sessionId,
     phoneNumber: session.phoneNumber,
     recordedAt: session.recordedAt,
     mode: liveMode(state?.awaiting),
-    awaiting: state?.awaiting ?? "",
+    awaiting,
+    ask,
     say: derivedSay(state),
     transcript: state?.accumulated || session.transcript,
     fields: liveFields(state?.fields),
     missing: state ? missingSlots(state.fields) : SLOT_ORDER.slice(),
+    needPhone: !session.phoneNumber,
     listingId: state?.listingId ?? "",
     ...(listing ? { listing } : {}),
   };
