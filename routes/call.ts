@@ -7,10 +7,8 @@
  */
 import { Router, type Request, type Response } from "express";
 import { extractFromTranscript, type ExtractFields } from "../lib/extract.js";
-import { speak, toDataUrl } from "../lib/elevenlabs.js";
+import { ElevenLabsError, speak, toDataUrl, transcribe } from "../lib/elevenlabs.js";
 import { CATEGORIES, store, type Category } from "../lib/store.js";
-
-const ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
 
 /** Hand-off shape for P7 — keyed by sessionId. */
 export type CallSession = {
@@ -25,47 +23,6 @@ const callSessions = new Map<string, CallSession>();
 
 export function getCallSession(sessionId: string): CallSession | undefined {
   return callSessions.get(sessionId);
-}
-
-function filenameForMime(mimeType: string): string {
-  if (mimeType.includes("mp4") || mimeType.includes("m4a") || mimeType.includes("aac")) {
-    return "recording.m4a";
-  }
-  if (mimeType.includes("ogg")) return "recording.ogg";
-  if (mimeType.includes("wav")) return "recording.wav";
-  if (mimeType.includes("mpeg") || mimeType.includes("mp3")) return "recording.mp3";
-  return "recording.webm";
-}
-
-/** Temporary inline STT — swap for lib/elevenlabs.ts once P2 lands. */
-async function transcribeAudioBuffer(buffer: Buffer, mimeType: string): Promise<string> {
-  const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error("ELEVENLABS_API_KEY is not set");
-  }
-
-  const form = new FormData();
-  form.append(
-    "file",
-    new Blob([new Uint8Array(buffer)], { type: mimeType }),
-    filenameForMime(mimeType)
-  );
-  form.append("model_id", "scribe_v2");
-
-  const elRes = await fetch(ELEVENLABS_STT_URL, {
-    method: "POST",
-    headers: { "xi-api-key": apiKey },
-    body: form,
-  });
-
-  const raw = await elRes.text();
-  if (!elRes.ok) {
-    console.error("ElevenLabs STT error", elRes.status, raw.slice(0, 500));
-    throw new Error("Transcription failed");
-  }
-
-  const parsed = JSON.parse(raw) as { text?: string };
-  return parsed.text ?? "";
 }
 
 function readTypedAnswer(req: Request): string {
@@ -88,6 +45,24 @@ function applyPhone(session: CallSession, req: Request): void {
   const raw = typeof req.body?.phoneNumber === "string" ? req.body.phoneNumber.trim() : "";
   if (!raw) return;
   session.phoneNumber = normalizePhone(raw) || raw;
+}
+
+function sendVoiceError(res: Response, err: unknown, fallback: string): void {
+  console.error(fallback, err instanceof Error ? err.message : err);
+  if (err instanceof ElevenLabsError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  res.status(502).json({ error: fallback });
+}
+
+async function hearAudio(buffer: Buffer, mimeType: string, typed: string): Promise<string> {
+  try {
+    return (await transcribe(buffer, mimeType)).trim() || typed;
+  } catch (err) {
+    if (typed) return typed;
+    throw err;
+  }
 }
 
 export const callRouter = Router();
@@ -118,7 +93,7 @@ callRouter.post("/call/record", async (req: Request, res: Response) => {
         return;
       }
       if (buffer.length) {
-        transcript = (await transcribeAudioBuffer(buffer, mimeType)).trim() || typed;
+        transcript = await hearAudio(buffer, mimeType, typed);
         audio_url = "data:" + mimeType + ";base64," + audioB64;
       }
     }
@@ -142,14 +117,7 @@ callRouter.post("/call/record", async (req: Request, res: Response) => {
 
     res.json({ sessionId, phoneNumber: session.phoneNumber, transcript });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Transcription failed.";
-    console.error("POST /call/record", err);
-    const missingKey = message.includes("ELEVENLABS_API_KEY");
-    res.status(missingKey ? 500 : 502).json({
-      error: missingKey
-        ? "Server is missing ELEVENLABS_API_KEY."
-        : "Transcription failed. Try recording again.",
-    });
+    sendVoiceError(res, err, "Transcription failed. Try recording again.");
   }
 });
 
@@ -503,19 +471,12 @@ async function hearCaller(req: Request, res: Response): Promise<string | null> {
         return null;
       }
       if (buffer.length) {
-        const heard = (await transcribeAudioBuffer(buffer, mimeType)).trim();
-        if (heard) return heard;
+        const heard = await transcribe(buffer, mimeType);
+        if (heard.trim()) return heard.trim();
       }
     } catch (err) {
       if (typed) return typed;
-      const message = err instanceof Error ? err.message : "Transcription failed.";
-      console.error("POST /call/answer", err);
-      const missingKey = message.includes("ELEVENLABS_API_KEY");
-      res.status(missingKey ? 500 : 502).json({
-        error: missingKey
-          ? "Server is missing ELEVENLABS_API_KEY."
-          : "Transcription failed. Try answering again.",
-      });
+      sendVoiceError(res, err, "Transcription failed. Try answering again.");
       return null;
     }
   }

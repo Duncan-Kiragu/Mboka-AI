@@ -35,15 +35,43 @@ export class ElevenLabsError extends Error {
 }
 
 export function hasApiKey(): boolean {
-  return Boolean(process.env.ELEVENLABS_API_KEY?.trim());
+  return Boolean(readApiKey());
+}
+
+/** Strip copy-paste junk Render/.env often leave on the secret. */
+function readApiKey(): string {
+  let key = (process.env.ELEVENLABS_API_KEY || "").replace(/^\uFEFF/, "").trim();
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1).trim();
+  }
+  return key.replace(/^Bearer\s+/i, "").replace(/^xi-api-key\s*[:=]\s*/i, "").trim();
 }
 
 function requireApiKey(): string {
-  const key = process.env.ELEVENLABS_API_KEY?.trim();
+  const key = readApiKey();
   if (!key) {
     throw new ElevenLabsError("Server is missing ELEVENLABS_API_KEY.", 500);
   }
   return key;
+}
+
+function voiceFailure(kind: "stt" | "tts", status: number): ElevenLabsError {
+  if (status === 401 || status === 403) {
+    return new ElevenLabsError(
+      "ElevenLabs rejected the API key. In Render: Environment → ELEVENLABS_API_KEY, paste a key from elevenlabs.io (no quotes), then restart.",
+      401
+    );
+  }
+  if (kind === "stt") {
+    return new ElevenLabsError("Transcription failed. Try recording again.", 502);
+  }
+  return new ElevenLabsError(
+    "Could not generate confirmation audio. You can still confirm the listing.",
+    502
+  );
 }
 
 /** ElevenLabs picks the decoder off the filename, so give it a real extension. */
@@ -81,7 +109,7 @@ export async function transcribe(audio: Buffer, mimeType = "audio/webm"): Promis
   const raw = await res.text();
   if (!res.ok) {
     console.error("ElevenLabs STT error", res.status, raw.slice(0, 500));
-    throw new ElevenLabsError("Transcription failed. Try recording again.", 502);
+    throw voiceFailure("stt", res.status);
   }
 
   try {
@@ -120,13 +148,12 @@ export async function speak(text: string): Promise<Buffer> {
     const body = await res.text();
     console.error("ElevenLabs TTS error", attempt.model_id, res.status, body.slice(0, 500));
     // A bad key will not get better on the fallback model.
-    if (res.status === 401 || res.status === 403) break;
+    if (res.status === 401 || res.status === 403) {
+      throw voiceFailure("tts", res.status);
+    }
   }
 
-  throw new ElevenLabsError(
-    "Could not generate confirmation audio. You can still confirm the listing.",
-    502
-  );
+  throw voiceFailure("tts", 502);
 }
 
 /** mp3 bytes → data URL, so a narration can ride on the listing JSON (no disk on Render). */
